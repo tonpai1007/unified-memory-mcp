@@ -131,6 +131,23 @@ Claude Desktop / Cursor / any stdio client:
 * **One warm graph child.** The graph child lives in a dedicated thread with its own event loop. It cannot be owned by a request handler — anyio's `stdio_client` raises *"Attempted to exit a cancel scope in a different task than it was entered in"* — and stateless HTTP makes every request its own task. Spawning the CLI per call instead reloads the whole index every time (7.4–8.5 s measured, versus tens of milliseconds warm).
 * **Client-side scoping.** Upstream mem0 filters only on `user_id`/`agent_id`, so project scoping and TTL flags are applied here (over-fetch, then filter) rather than in the store.
 
+## Releasing
+
+1. Bump `version` in `pyproject.toml` and add a `CHANGELOG.md` entry.
+2. Tag and push: `git tag -a vX.Y.Z -m "…" && git push origin vX.Y.Z`
+   → `release.yml` builds, runs `twine check`, creates the GitHub release and
+   publishes to PyPI.
+3. Publishing to PyPI needs a publisher registered for this repository:
+   - **Trusted publishing (recommended)** — on PyPI: *Account → Publishing → Add
+     a new publisher → GitHub*, owner `tonpai1007`, repository
+     `amadeus-memory-mcp`, workflow `release.yml`. The workflow requests an
+     OIDC token (`id-token: write`) and PyPI exchanges it.
+   - **API token** — create a token on PyPI and add it as the repository
+     secret `PYPI_API_TOKEN`; the workflow uses it when present.
+
+Both paths work with the same workflow; with neither configured the GitHub
+release is still created and only the PyPI step fails.
+
 ## Licence
 
 Apache-2.0 — see `LICENSE`.
