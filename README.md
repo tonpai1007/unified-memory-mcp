@@ -32,7 +32,7 @@ This package serves both surfaces from **one process** over Streamable HTTP, and
 | `fact_freshness(memory_id)` | *Is this old fact still true?* — re-checks that every linked symbol still exists, that no file moved, and that the fact's TTL has not passed |
 | `fact_impact(memory_id)` | *What breaks if I touch this?* — callers/callees of every linked symbol, optionally plus the impact of the current working-tree changes |
 
-Facts can also be **scoped to a project** (`project` on write and read) so a TONPAIICE3 finding never pollutes an AMADEUS recall, **tagged with their session** (captured automatically from the MCP request `_meta`), and given a **TTL** (`stale_after_days` / `stale_after`) so facts about code decay instead of being trusted forever.
+Facts can also be **scoped to a project** (`project` on write and read) so a finding from one project never pollutes another project's recall, **tagged with their session** (captured automatically from the MCP request `_meta`), and given a **TTL** (`stale_after_days` / `stale_after`) so facts about code decay instead of being trusted forever.
 
 ## Install
 
