@@ -85,7 +85,7 @@ def start_server() -> bool:
         log(f"watchdog: started amadeus-memory on {HOST}:{PORT} (log: {log_path})")
         _last_started["server"] = time.time()
         return True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log(f"watchdog: failed to start server: {exc!r}")
         return False
     finally:
@@ -98,25 +98,24 @@ async def _refresh_once() -> None:
     from mcp.client.streamable_http import streamablehttp_client
 
     url = f"http://{HOST}:{PORT}/mcp"
-    async with streamablehttp_client(url) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            for target in REFRESH_TARGETS.split(","):
-                target = target.strip()
-                if not target:
-                    continue
-                name, _, repo_path = target.partition("=")
-                name = name.strip()
-                repo_path = repo_path.strip()
-                started = time.monotonic()
-                try:
-                    await session.call_tool(
-                        "index_repository",
-                        {"repo_path": repo_path, "mode": REFRESH_MODE, "name": name},
-                    )
-                    log(f"watchdog: re-indexed {name} in {time.monotonic() - started:.0f}s")
-                except Exception as exc:  # noqa: BLE001
-                    log(f"watchdog: re-index of {name} failed: {exc!r}")
+    async with streamablehttp_client(url) as (read, write, _), ClientSession(read, write) as session:
+        await session.initialize()
+        for raw_entry in REFRESH_TARGETS.split(","):
+            entry = raw_entry.strip()
+            if not entry:
+                continue
+            name, _, repo_path = entry.partition("=")
+            name = name.strip()
+            repo_path = repo_path.strip()
+            started = time.monotonic()
+            try:
+                await session.call_tool(
+                    "index_repository",
+                    {"repo_path": repo_path, "mode": REFRESH_MODE, "name": name},
+                )
+                log(f"watchdog: re-indexed {name} in {time.monotonic() - started:.0f}s")
+            except Exception as exc:
+                log(f"watchdog: re-index of {name} failed: {exc!r}")
 
 
 def _refresh_loop() -> None:
@@ -124,7 +123,7 @@ def _refresh_loop() -> None:
     while True:
         try:
             asyncio.run(_refresh_once())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log(f"watchdog: graph refresh failed: {exc!r}")
         time.sleep(max(60.0, REFRESH_MINUTES * 60.0))
 
@@ -147,7 +146,7 @@ def main() -> int:
         except KeyboardInterrupt:
             log("watchdog: interrupted")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log(f"watchdog: loop error {exc!r}")
             time.sleep(CHECK_INTERVAL)
 

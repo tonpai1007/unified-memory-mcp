@@ -2,8 +2,8 @@
 
 Serves two memory surfaces from one process:
 
-* **semantic facts** (mem0) — see :mod:`amadeus_memory.store`
-* **a code knowledge graph** (codebase-memory) — see :mod:`amadeus_memory.graph`
+* **semantic facts** (mem0) â€” see :mod:`amadeus_memory.store`
+* **a code knowledge graph** (codebase-memory) â€” see :mod:`amadeus_memory.graph`
 
 and joins them: facts are linked to the symbols they describe, so ``recall``
 returns the answer *and* the code, ``facts_for_symbol`` answers "what do we
@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -58,7 +59,7 @@ mcp = FastMCP(
     json_response=True,
 )
 
-# ── defaults ───────────────────────────────────────────────────────────────
+# â”€â”€ defaults â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _default_project_cache: str | None = None
 
 
@@ -82,12 +83,14 @@ async def _default_project() -> str:
                     _default_project_cache = str(project["name"])
                     return _default_project_cache
             _default_project_cache = str(projects[0]["name"])
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:
+        # The graph may be unavailable (binary not installed) — the fact side
+        # must keep working, so this is a soft fallback, not an error.
+        print(f"[amadeus-memory] project auto-detect failed: {exc!r}", file=sys.stderr)
     return ""
 
 
-# ── helpers ────────────────────────────────────────────────────────────────
+# â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _dump(payload: Any) -> str:
     try:
         return json.dumps(payload, ensure_ascii=False, default=str)
@@ -146,7 +149,7 @@ def _mem0_rows(raw: str) -> list[dict[str, Any]]:
 def _mem0(tool: str, args: dict[str, Any]) -> str:
     try:
         result = store_mod.call_tool(tool, args)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return _dump({"error": f"{tool} failed: {exc}"})
     if isinstance(result, dict) and "results" in result:
         results = []
@@ -231,10 +234,8 @@ def _parse_trace(text: str) -> dict[str, Any]:
             if key in ("function", "direction"):
                 out[key] = value.strip()
             elif key in ("callers_total", "callees_total"):
-                try:
+                with contextlib.suppress(ValueError):
                     out[key] = int(value.strip())
-                except ValueError:
-                    pass
             continue
         if line.startswith("  ") and line.strip():
             parts = line.strip().rsplit(" ", 1)
@@ -295,7 +296,7 @@ def _search_facts(query: str, user_id: str | None, top_k: int, project: str | No
     }
 
 
-# ── fact tools ─────────────────────────────────────────────────────────────
+# â”€â”€ fact tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @mcp.tool(description="Store a durable fact in semantic memory. Use for verified findings, decisions and gotchas.")
 async def add_memory(
     text: str,
@@ -364,7 +365,7 @@ async def delete_all_memories(user_id: str | None = None, agent_id: str | None =
     return _mem0("delete_all_memories", {"user_id": user_id, "agent_id": agent_id})
 
 
-# ── graph tools ────────────────────────────────────────────────────────────
+# â”€â”€ graph tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @mcp.tool(description="Find symbols in the code knowledge graph by name pattern.")
 async def search_graph(
     name_pattern: str | None = None,
@@ -551,7 +552,7 @@ async def codebase_memory(tool: str, arguments: str = "{}") -> str:
     return await graph_mod.call(tool, args if isinstance(args, dict) else {})
 
 
-# ── cross-linked tools ─────────────────────────────────────────────────────
+# â”€â”€ cross-linked tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @mcp.tool(
     description=(
         "Store a verified fact AND link it to code: resolves each symbol name against the "
@@ -658,7 +659,7 @@ async def recall(
 @mcp.tool(
     description=(
         "Reverse index: every stored fact linked to a given symbol (or file). Answers "
-        "'what do we know about this function?' — the opposite direction of remember_fact."
+        "'what do we know about this function?' â€” the opposite direction of remember_fact."
     )
 )
 async def facts_for_symbol(
@@ -749,7 +750,7 @@ async def fact_freshness(memory_id: str, project: str | None = None) -> str:
 @mcp.tool(
     description=(
         "Blast radius of a stored fact: for every symbol linked to the fact, who calls it and "
-        "what it calls, plus — optionally — the impact of the current working-tree changes."
+        "what it calls, plus â€” optionally â€” the impact of the current working-tree changes."
     )
 )
 async def fact_impact(
@@ -854,6 +855,9 @@ async def facts_by_project(
     )
 
 
+EXPIRING_SOON_DAYS = 7
+
+
 @mcp.tool(
     description=(
         "List facts whose TTL has expired (metadata.stale_after in the past), plus those expiring "
@@ -876,7 +880,7 @@ async def expired_facts(user_id: str = "amadeus", limit: int = 50) -> str:
                     "symbols": [link.get("symbol") for link in ((row.get("metadata") or {}).get("symbols") or [])],
                 }
             )
-        elif state["days_left"] is not None and state["days_left"] <= 7:
+        elif state["days_left"] is not None and state["days_left"] <= EXPIRING_SOON_DAYS:
             soon.append({"id": row.get("id"), "memory": (row.get("memory") or "")[:200], "days_left": state["days_left"]})
     return _dump(
         {
@@ -906,7 +910,7 @@ def main() -> int:
     print(f"amadeus-memory-mcp listening on http://{args.host}:{args.port}/mcp", file=sys.stderr)
     print(f"  fact store : {store_mod.store_dir()} (backend: {store_mod.backend()})", file=sys.stderr)
     exe = graph_mod.codebase_memory_exe()
-    print(f"  code graph : {exe or 'not installed — graph tools will report an error'}", file=sys.stderr)
+    print(f"  code graph : {exe or 'not installed â€” graph tools will report an error'}", file=sys.stderr)
     asyncio.run(graph_mod.prewarm())
     mcp.run(transport="streamable-http")
     return 0

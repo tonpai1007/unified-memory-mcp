@@ -2,12 +2,12 @@
 
 Two interchangeable backends, same observable behaviour:
 
-1. **upstream module** — when the ``mem0-mcp-server`` package (Apache-2.0,
+1. **upstream module** â€” when the ``mem0-mcp-server`` package (Apache-2.0,
    https://github.com/zfy258/mem0-mcp-server) is installed, its ``mcp_server``
    module is used verbatim. That keeps the store layout, the ``history.db``
    bookkeeping and the embedder config byte-identical to what other tools in
    the same ecosystem expect.
-2. **direct mem0ai** — otherwise the same store is built here with mem0ai
+2. **direct mem0ai** â€” otherwise the same store is built here with mem0ai
    directly (embedded Qdrant + the same history db path), so the package works
    standalone.
 
@@ -20,6 +20,7 @@ OpenAI embeddings, which would corrupt an existing collection.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,7 @@ def store_dir() -> Path:
 
 def _ensure_env() -> None:
     os.environ.setdefault("MEM0_DIR", str(store_dir()))
-    # 512-dim FastEmbed collection — never let an OpenAI key switch it.
+    # 512-dim FastEmbed collection â€” never let an OpenAI key switch it.
     os.environ.pop("OPENAI_API_KEY", None)
 
 
@@ -42,9 +43,9 @@ def _upstream_module():
 
     Two distributions exist and they are NOT interchangeable:
       * the git build (https://github.com/zfy258/mem0-mcp-server, module
-        ``mcp_server``) — a LOCAL store (embedded Qdrant + history db) with
+        ``mcp_server``) â€” a LOCAL store (embedded Qdrant + history db) with
         a ``call_tool`` dispatcher; this is the one we mirror;
-      * the PyPI build (0.2.x, module ``mem0_mcp_server.server``) — a HOSTED
+      * the PyPI build (0.2.x, module ``mem0_mcp_server.server``) â€” a HOSTED
         mem0 API client (needs an API key, no local store, no call_tool).
     The hosted variant is therefore ignored and the direct mem0ai path is used
     instead.
@@ -81,10 +82,8 @@ def _build_direct_memory():
     }
     memory = Memory.from_config(config)
     # Load the model now so a slow first start happens here, not on first call.
-    try:
-        memory.embedding_model.dense_model
-    except Exception:  # noqa: BLE001
-        pass
+    with contextlib.suppress(Exception):
+        _ = memory.embedding_model.dense_model
     return memory
 
 

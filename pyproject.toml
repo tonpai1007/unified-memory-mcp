@@ -52,3 +52,24 @@ packages = ["src/amadeus_memory"]
 [tool.ruff]
 line-length = 120
 target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "S", "PL", "BLE", "RUF"]
+ignore = [
+  "E501",    # long lines are readable here (prompt strings, error payloads)
+  "BLE001",  # blind excepts are deliberate: a failing memory/graph call must
+             # never take the tool (or the server) down — every call site logs.
+  "PLC0415", # lazy imports are deliberate (optional deps, heavy modules)
+  "PLW0603", # module-level singletons (the warm graph child, project cache)
+  "S603",    # subprocess calls only ever target a resolved, trusted binary
+  "SIM115",  # short-lived temp-file reads (closed immediately afterwards)
+  "PLR0913", # MCP tool schemas mirror the underlying API surface, which has
+  "PLR0917", # many optional filters — one parameter per API field is the point
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The tool dispatcher has one return per tool case, and the smoke test is a
+# flat list of assertions — both are clearer than the abstractions the rules
+# would push towards.
+"src/amadeus_memory/store.py" = ["PLR0911"]
+"tests/smoke_test.py" = ["PLR0912"]

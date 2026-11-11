@@ -9,7 +9,7 @@ tool degrades to a clear error instead of failing the server.
 Why a warm child instead of the CLI
 ------------------------------------
 ``codebase-memory-mcp cli <tool> --args-file`` spawns the binary per call and
-reloads the whole index from disk every time — measured 7.4-8.5 s per query.
+reloads the whole index from disk every time â€” measured 7.4-8.5 s per query.
 One long-lived child holds the index in RAM: queries drop to tens of
 milliseconds.
 
@@ -25,6 +25,7 @@ sidesteps that entirely.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -99,17 +100,16 @@ class CodeGraph:
 
             self._loop = asyncio.get_running_loop()
             params = StdioServerParameters(command=str(self._exe), args=[])
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    self._session = session
-                    self._ready.set()
-                    while not self._stop.is_set():
-                        await asyncio.sleep(0.5)
+            async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+                await session.initialize()
+                self._session = session
+                self._ready.set()
+                while not self._stop.is_set():
+                    await asyncio.sleep(0.5)
 
         try:
             asyncio.run(_main())
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             self._error = exc
             self._ready.set()
 
@@ -149,6 +149,7 @@ class CodeGraph:
                     stdout=out_file,
                     stderr=err_file,
                     timeout=timeout,
+                    check=False,
                 )
             finally:
                 out_file.close()
@@ -163,10 +164,8 @@ class CodeGraph:
         finally:
             for tmp in (args_path, out_path, err_path):
                 if tmp:
-                    try:
+                    with contextlib.suppress(OSError):
                         os.unlink(tmp)
-                    except OSError:
-                        pass
 
 
 _graph: CodeGraph | None = None
@@ -180,7 +179,7 @@ async def get_graph() -> CodeGraph:
         return _graph
     graph = CodeGraph()
     if not graph.start():
-        _log(f"graph child unavailable ({graph._error!r}) — graph tools will error, facts still work")
+        _log(f"graph child unavailable ({graph._error!r}) â€” graph tools will error, facts still work")
     _graph = graph
     return graph
 
@@ -200,15 +199,15 @@ async def call(tool: str, args: dict[str, Any]) -> str:
         for attempt in (1, 2):
             try:
                 return await asyncio.to_thread(graph.call, tool, args)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_error = repr(exc)
                 if attempt == 1:
                     await reset_graph()
                     continue
-        # Warm child unavailable — fall back to the CLI (slow but works).
+        # Warm child unavailable â€” fall back to the CLI (slow but works).
         try:
             return await asyncio.to_thread(graph.call_cli, tool, args)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return json.dumps({"error": f"codebase-memory {tool} failed: {last_error} / cli: {exc!r}"})
 
 
@@ -221,5 +220,5 @@ async def prewarm() -> None:
         if DEFAULT_PROJECT:
             await asyncio.to_thread(graph.call, "index_status", {"project": DEFAULT_PROJECT})
         _log(f"graph child warm in {time.monotonic() - started:.1f}s")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log(f"graph warmup failed: {exc!r}")
