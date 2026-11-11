@@ -59,13 +59,20 @@ def _upstream_module():
 
 
 def _build_direct_memory():
-    """Build a mem0 Memory instance with the same layout as the upstream server."""
+    """Build a mem0 Memory instance with the same layout as the upstream server.
+
+    The embedder model and dimension MUST match the upstream local-store
+    build byte for byte: ``BAAI/bge-small-zh-v1.5`` produces 512-dim vectors
+    (``bge-small-en-v1.5`` is 384 and would be rejected by the existing
+    collection).
+    """
     from mem0 import Memory
 
     mem0_dir = store_dir()
+    model = os.environ.get("MEM0_LOCAL_FASTEMBED_MODEL", "BAAI/bge-small-zh-v1.5")
     config = {
         "llm": {"provider": "openai", "config": {"model": "gpt-5-mini", "api_key": "dummy"}},
-        "embedder": {"provider": "fastembed", "config": {"model": "BAAI/bge-small-en-v1.5"}},
+        "embedder": {"provider": "fastembed", "config": {"model": model}},
         "vector_store": {
             "provider": "qdrant",
             "config": {"path": str(mem0_dir / "qdrant"), "embedding_model_dims": 512},
