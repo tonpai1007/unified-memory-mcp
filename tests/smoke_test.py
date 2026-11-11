@@ -55,6 +55,10 @@ EXPECTED_TOOLS = {
     "index_repository",
     "delete_project",
     "codebase_memory",
+    "system_vitals",
+    "memory_audit",
+    "memory_scope_facts",
+    "memory_purge_expired",
 }
 
 

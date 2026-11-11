@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **System vitals** (`system_vitals`): one call that answers "is the whole system OK?" — brain status and uptime, scheduler job count, open circuit breakers, dead-letter queue depth, vault reachability, response-cache hit rate. Reads the brain's HTTP API (`AMADEUS_BRAIN_URL`, default `http://127.0.0.1:8000`) and reports `unreachable` instead of failing when the brain is down.
+- **Memory hygiene** tools, because the fact store accumulates untidy rows:
+  - `memory_audit` — scope coverage per project, unscoped facts, expired facts, facts without provenance or symbol links, and near-duplicate pairs (token Jaccard).
+  - `memory_scope_facts` — assigns a project scope to unscoped facts (metadata only, text is never rewritten); without an explicit project the scope is derived from the fact's linked symbols (the graph's qualified-name prefix). Dry run by default.
+  - `memory_dedupe` — removes near-duplicate rows (token Jaccard ≥ threshold), keeping the OLDEST copy so the original timestamp survives. Dry run by default.
+  - `memory_purge_expired` — deletes facts whose TTL has passed. Dry run by default.
+- `store.mem0_rows` / `store.expiry_of` / `store.call` are now the single implementations of the row/TTL/call helpers (previously duplicated in the server module).
+
 ## [0.1.0] - 2026-11-11
 
 ### Added

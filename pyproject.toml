@@ -73,4 +73,5 @@ ignore = [
 # flat list of assertions — both are clearer than the abstractions the rules
 # would push towards.
 "src/unified_memory/store.py" = ["PLR0911"]
+"src/unified_memory/vitals.py" = ["PLR0912"]
 "tests/smoke_test.py" = ["PLR0912"]

@@ -26,6 +26,11 @@ This package serves both surfaces from **one process** over Streamable HTTP, and
 
 | Tool | Question it answers |
 |---|---|
+| `system_vitals` | *Is the whole system OK?* — brain health and uptime, scheduler jobs, open circuit breakers, dead-letter queue, vault reachability, cache hit rate, in one call |
+| `memory_audit` | *Is my memory trustworthy?* — scope coverage, unscoped facts, expired facts, missing provenance, near-duplicates |
+| `memory_scope_facts` | *Stop one project's facts polluting another's recalls* — assigns a project scope (metadata only, dry run by default) |
+| `memory_dedupe` | *Remove the same fact stored twice* — deletes near-duplicate rows, keeping the oldest (dry run by default) |
+| `memory_purge_expired` | *Clean up facts that decayed* — deletes TTL-expired facts (dry run by default) |
 | `remember_fact(text, symbols=[…])` | *Store a fact and pin it to the code it describes* — the symbol is resolved to its qualified name + file and kept in the fact's metadata |
 | `recall(query)` | *Give me the answer and the code* — one fused call over facts **and** graph symbols, with `facts_linked_to_code` calling out the overlap |
 | `facts_for_symbol(symbol)` | *What do we know about this function?* — the reverse index |

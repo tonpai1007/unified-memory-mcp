@@ -21,7 +21,9 @@ OpenAI embeddings, which would corrupt an existing collection.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -165,3 +167,71 @@ def call_tool(name: str, args: dict[str, Any]) -> Any:
 def backend() -> str:
     """Which backend is in use: ``upstream`` or ``direct``."""
     return "upstream" if _upstream_module() is not None else "direct"
+
+
+def call(tool: str, args: dict[str, Any]) -> str:
+    """Call a mem0 tool and return a normalised JSON payload.
+
+    The upstream module returns ``{"results": [...]}``; the results are
+    trimmed to the fields that matter (id, memory, score, user_id, metadata).
+    """
+    try:
+        result = call_tool(tool, args)
+    except Exception as exc:
+        return json.dumps({"error": f"{tool} failed: {exc}"})
+    if isinstance(result, dict) and "results" in result:
+        results = []
+        for row in result.get("results") or []:
+            if isinstance(row, dict):
+                results.append(
+                    {
+                        "id": row.get("id"),
+                        "memory": row.get("memory"),
+                        "score": row.get("score"),
+                        "user_id": row.get("user_id"),
+                        "metadata": row.get("metadata"),
+                    }
+                )
+            else:
+                results.append(row)
+        return json.dumps({"results": results}, ensure_ascii=False, default=str)
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+# ── shared row/TTL helpers (used by the server, vitals and hygiene tools) ──
+def mem0_rows(raw: str) -> list[dict[str, Any]]:
+    """Normalise a mem0 payload to rows.
+
+    ``search_memories`` returns {"results": [...]}; ``get_memory`` returns the
+    single memory object itself.
+    """
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        if isinstance(data.get("results"), list):
+            return data["results"]
+        if data.get("memory") or data.get("id"):
+            return [data]
+    return []
+
+
+def expiry_of(row: dict[str, Any]) -> dict[str, Any]:
+    """TTL state of a fact: metadata.stale_after (ISO date) vs now."""
+    meta = row.get("metadata") or {}
+    raw = meta.get("stale_after")
+    if not raw:
+        return {"expires_at": None, "expired": False, "days_left": None}
+    try:
+        expiry = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return {"expires_at": str(raw), "expired": False, "days_left": None}
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    delta = expiry - datetime.now(timezone.utc)
+    return {
+        "expires_at": expiry.isoformat(),
+        "expired": delta.total_seconds() <= 0,
+        "days_left": round(delta.total_seconds() / 86400.0, 1),
+    }

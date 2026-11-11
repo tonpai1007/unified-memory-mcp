@@ -133,17 +133,8 @@ def _session_id_from(ctx: Any) -> str | None:
 
 
 def _mem0_rows(raw: str) -> list[dict[str, Any]]:
-    """Normalise a mem0 payload to rows (``get_memory`` returns the object)."""
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return []
-    if isinstance(data, dict):
-        if isinstance(data.get("results"), list):
-            return data["results"]
-        if data.get("memory") or data.get("id"):
-            return [data]
-    return []
+    """Row normaliser — see :func:`unified_memory.store.mem0_rows`."""
+    return store_mod.mem0_rows(raw)
 
 
 def _mem0(tool: str, args: dict[str, Any]) -> str:
@@ -171,23 +162,8 @@ def _mem0(tool: str, args: dict[str, Any]) -> str:
 
 
 def _expiry_of(row: dict[str, Any]) -> dict[str, Any]:
-    """TTL state of a fact: metadata.stale_after (ISO date) vs now."""
-    meta = row.get("metadata") or {}
-    raw = meta.get("stale_after")
-    if not raw:
-        return {"expires_at": None, "expired": False, "days_left": None}
-    try:
-        expiry = datetime.fromisoformat(str(raw))
-    except ValueError:
-        return {"expires_at": str(raw), "expired": False, "days_left": None}
-    if expiry.tzinfo is None:
-        expiry = expiry.replace(tzinfo=timezone.utc)
-    delta = expiry - datetime.now(timezone.utc)
-    return {
-        "expires_at": expiry.isoformat(),
-        "expired": delta.total_seconds() <= 0,
-        "days_left": round(delta.total_seconds() / 86400.0, 1),
-    }
+    """TTL state of a fact — see :func:`unified_memory.store.expiry_of`."""
+    return store_mod.expiry_of(row)
 
 
 def _with_expiry(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
@@ -914,6 +890,79 @@ def main() -> int:
     asyncio.run(graph_mod.prewarm())
     mcp.run(transport="streamable-http")
     return 0
+
+
+@mcp.tool(
+    description=(
+        "One-call health picture of the local AMADEUS system: brain status, scheduler jobs, "
+        "open circuit breakers, dead-letter queue, vault reachability, response-cache hit rate "
+        "and the brain's own uptime. Reports 'unreachable' instead of failing when the brain "
+        "is not running."
+    )
+)
+async def system_vitals() -> str:
+    from .vitals import vitals as _vitals
+
+    return _dump(_vitals())
+
+
+@mcp.tool(
+    description=(
+        "Audit the fact store: how many facts are scoped per project, how many are unscoped, "
+        "expired, missing provenance or symbol links, and which pairs are near-duplicates. "
+        "Use it before trusting recall quality."
+    )
+)
+async def memory_audit(user_id: str = "amadeus", duplicate_threshold: float = 0.82) -> str:
+    from .vitals import audit as _audit
+
+    return _dump(_audit(user_id=user_id, duplicate_threshold=duplicate_threshold))
+
+
+@mcp.tool(
+    description=(
+        "Assign a project scope to facts that have none (metadata only — fact text is never "
+        "rewritten). Without an explicit project the scope is derived from the fact's linked "
+        "symbols. Defaults to a dry run: set dry_run=false to apply."
+    )
+)
+async def memory_scope_facts(
+    user_id: str = "amadeus",
+    project: str | None = None,
+    dry_run: bool = True,
+    limit: int = 200,
+) -> str:
+    from .vitals import scope_facts as _scope
+
+    return _dump(_scope(user_id=user_id, project=project, dry_run=dry_run, limit=limit))
+
+
+@mcp.tool(
+    description=(
+        "Remove near-duplicate facts, keeping the OLDEST copy of each pair (only pairs above the "
+        "similarity threshold are touched). Defaults to a dry run: set dry_run=false to delete."
+    )
+)
+async def memory_dedupe(
+    user_id: str = "amadeus",
+    threshold: float = 0.95,
+    dry_run: bool = True,
+    limit: int = 50,
+) -> str:
+    from .vitals import dedupe as _dedupe
+
+    return _dump(_dedupe(user_id=user_id, threshold=threshold, dry_run=dry_run, limit=limit))
+
+
+@mcp.tool(
+    description=(
+        "Delete facts whose TTL has passed. Defaults to a dry run: set dry_run=false to delete."
+    )
+)
+async def memory_purge_expired(user_id: str = "amadeus", dry_run: bool = True, limit: int = 200) -> str:
+    from .vitals import purge_expired as _purge
+
+    return _dump(_purge(user_id=user_id, dry_run=dry_run, limit=limit))
 
 
 if __name__ == "__main__":
