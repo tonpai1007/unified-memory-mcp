@@ -1,4 +1,4 @@
-"""amadeus-memory-mcp — one MCP server for facts AND a code knowledge graph.
+"""unified-memory-mcp — one MCP server for facts AND a code knowledge graph.
 
 Two memory surfaces used to live behind two stdio MCP servers, and MCP stdio
 means the client spawns the server itself — every editor session and every
@@ -14,8 +14,8 @@ symbols they describe, so recall returns the answer *and* the code, and a
 symbol can surface the facts written about it.
 
 Public entry points:
-  * ``amadeus_memory.server:main``      — the MCP server (console script)
-  * ``amadeus_memory.watchdog:main``    — optional supervisor for long-lived runs
+  * ``unified_memory.server:main``      — the MCP server (console script)
+  * ``unified_memory.watchdog:main``    — optional supervisor for long-lived runs
 """
 
 from __future__ import annotations

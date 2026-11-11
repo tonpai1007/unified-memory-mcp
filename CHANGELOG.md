@@ -33,7 +33,7 @@ All notable changes to this project are documented here. The format follows
 - **Session provenance** — the calling session id is captured automatically
   from the MCP request `_meta` (`ai.opencode/sessionID`).
 - `facts_by_project` — per-project inventory of the fact store.
-- Optional supervisor: `python -m amadeus_memory.watchdog` — probes the port,
+- Optional supervisor: `python -m unified_memory.watchdog` — probes the port,
   restarts the server with a boot grace period, and can re-index the graph on
   a schedule (`CODEBASE_MEMORY_REFRESH_MINUTES`).
 

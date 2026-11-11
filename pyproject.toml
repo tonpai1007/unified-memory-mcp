@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "amadeus-memory-mcp"
+name = "unified-memory-mcp"
 version = "0.1.0"
 description = "One MCP server for semantic fact memory (mem0) and a code knowledge graph (codebase-memory), with cross-linked recall."
 readme = "README.md"
@@ -36,19 +36,19 @@ dependencies = [
 #   pip install "git+https://github.com/zfy258/mem0-mcp-server.git"
 # The PyPI distribution of the same name (0.2.x) is a HOSTED-API client with a
 # different contract; the package detects it and uses the direct mem0ai path
-# instead (see amadeus_memory.store). An extra cannot express the git URL
+# instead (see unified_memory.store). An extra cannot express the git URL
 # because PyPI rejects direct references in dependencies.
 
 [project.scripts]
-amadeus-memory-mcp = "amadeus_memory.server:main"
+unified-memory-mcp = "unified_memory.server:main"
 
 [project.urls]
-Homepage = "https://github.com/tonpai1007/amadeus-memory-mcp"
-Repository = "https://github.com/tonpai1007/amadeus-memory-mcp"
-Issues = "https://github.com/tonpai1007/amadeus-memory-mcp/issues"
+Homepage = "https://github.com/tonpai1007/unified-memory-mcp"
+Repository = "https://github.com/tonpai1007/unified-memory-mcp"
+Issues = "https://github.com/tonpai1007/unified-memory-mcp/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/amadeus_memory"]
+packages = ["src/unified_memory"]
 
 [tool.ruff]
 line-length = 120
@@ -72,5 +72,5 @@ ignore = [
 # The tool dispatcher has one return per tool case, and the smoke test is a
 # flat list of assertions — both are clearer than the abstractions the rules
 # would push towards.
-"src/amadeus_memory/store.py" = ["PLR0911"]
+"src/unified_memory/store.py" = ["PLR0911"]
 "tests/smoke_test.py" = ["PLR0912"]

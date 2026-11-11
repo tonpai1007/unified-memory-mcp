@@ -1,4 +1,4 @@
-# amadeus-memory-mcp
+# unified-memory-mcp
 
 **One MCP server for two memory surfaces: semantic facts (mem0) and a code knowledge graph (codebase-memory) — plus the join between them.**
 
@@ -37,13 +37,13 @@ Facts can also be **scoped to a project** (`project` on write and read) so a fin
 ## Install
 
 ```bash
-pip install amadeus-memory-mcp
+pip install unified-memory-mcp
 ```
 
 Straight from the tagged GitHub release (no PyPI account needed):
 
 ```bash
-pip install "amadeus-memory-mcp @ git+https://github.com/tonpai1007/amadeus-memory-mcp@v0.1.0"
+pip install "unified-memory-mcp @ git+https://github.com/tonpai1007/unified-memory-mcp@v0.1.0"
 ```
 
 The fact store works standalone (the package builds the same store with
@@ -71,15 +71,15 @@ Without it, every fact tool still works; the graph tools return a clear error.
 ## Run
 
 ```bash
-amadeus-memory-mcp                 # Streamable HTTP on 127.0.0.1:8777/mcp
-amadeus-memory-mcp --stdio         # stdio transport, for clients that need it
-amadeus-memory-mcp --port 9000     # custom port
+unified-memory-mcp                 # Streamable HTTP on 127.0.0.1:8777/mcp
+unified-memory-mcp --stdio         # stdio transport, for clients that need it
+unified-memory-mcp --port 9000     # custom port
 ```
 
 Keep it alive (it is a shared service, so something should supervise it):
 
 ```bash
-python -m amadeus_memory.watchdog
+python -m unified_memory.watchdog
 ```
 
 The watchdog probes the port every 45 s, restarts the server when it dies (with a grace period, so a booting server is not killed again), and can re-index the graph on a schedule:
@@ -112,7 +112,7 @@ Claude Desktop / Cursor / any stdio client:
 {
   "mcpServers": {
     "memory": {
-      "command": "amadeus-memory-mcp",
+      "command": "unified-memory-mcp",
       "args": ["--stdio"]
     }
   }
@@ -146,7 +146,7 @@ Claude Desktop / Cursor / any stdio client:
 3. Publishing to PyPI needs a publisher registered for this repository:
    - **Trusted publishing (recommended)** — on PyPI: *Account → Publishing → Add
      a new publisher → GitHub*, owner `tonpai1007`, repository
-     `amadeus-memory-mcp`, workflow `release.yml`. The workflow requests an
+     `unified-memory-mcp`, workflow `release.yml`. The workflow requests an
      OIDC token (`id-token: write`) and PyPI exchanges it.
    - **API token** — create a token on PyPI and add it as the repository
      secret `PYPI_API_TOKEN`; the workflow uses it when present.

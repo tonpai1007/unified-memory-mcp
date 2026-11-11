@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "src"))
 os.environ["MEM0_DIR"] = tempfile.mkdtemp(prefix="amadeus-memory-smoke-")
 os.environ.pop("OPENAI_API_KEY", None)
 
-from amadeus_memory import server as srv  # noqa: E402
+from unified_memory import server as srv  # noqa: E402
 
 EXPECTED_TOOLS = {
     "add_memory",

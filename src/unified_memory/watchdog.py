@@ -4,7 +4,7 @@ MCP stdio servers are spawned per client session, which is why this package
 serves over HTTP instead. When it serves over HTTP, something should keep it
 alive: this watchdog probes the port and restarts the server if it dies.
 
-    python -m amadeus_memory.watchdog
+    python -m unified_memory.watchdog
 
 It also keeps the code graph fresh on a schedule (codebase-memory's own file
 watcher is usually disabled, because a large dirty worktree makes every query
@@ -39,7 +39,7 @@ REFRESH_MODE = os.environ.get("CODEBASE_MEMORY_REFRESH_MODE", "fast")
 #   EXTRA_SERVICES="Name|port|command|Name2|port2|command2"
 # The command may contain spaces; only the first two fields are split on "|".
 EXTRA_SERVICES = os.environ.get("AMADEUS_WATCHDOG_EXTRA_SERVICES", "")
-LOG_PATH = Path(os.environ.get("TEMP", str(Path.home()))) / "amadeus_memory_watchdog.log"
+LOG_PATH = Path(os.environ.get("TEMP", str(Path.home()))) / "unified_memory_watchdog.log"
 MAX_LOG_BYTES = 1024 * 1024
 
 _last_started: dict[str, float] = {}
@@ -74,14 +74,14 @@ def start_server() -> bool:
     env.setdefault("MEM0_HOST", HOST)
     env.pop("OPENAI_API_KEY", None)
     creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    log_path = Path(os.environ.get("TEMP", str(Path.home()))) / "amadeus_memory_server.log"
+    log_path = Path(os.environ.get("TEMP", str(Path.home()))) / "unified_memory_server.log"
     try:
         handle = log_path.open("a", encoding="utf-8")
     except OSError:
         handle = subprocess.DEVNULL
     try:
         subprocess.Popen(
-            [sys.executable, "-m", "amadeus_memory.server"],
+            [sys.executable, "-m", "unified_memory.server"],
             env=env,
             stdout=handle,
             stderr=handle,

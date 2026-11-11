@@ -2,8 +2,8 @@
 
 Serves two memory surfaces from one process:
 
-* **semantic facts** (mem0) â€” see :mod:`amadeus_memory.store`
-* **a code knowledge graph** (codebase-memory) â€” see :mod:`amadeus_memory.graph`
+* **semantic facts** (mem0) â€” see :mod:`unified_memory.store`
+* **a code knowledge graph** (codebase-memory) â€” see :mod:`unified_memory.graph`
 
 and joins them: facts are linked to the symbols they describe, so ``recall``
 returns the answer *and* the code, ``facts_for_symbol`` answers "what do we
@@ -895,7 +895,7 @@ async def expired_facts(user_id: str = "amadeus", limit: int = 50) -> str:
 
 def main() -> int:
     """Console entry point."""
-    parser = argparse.ArgumentParser(prog="amadeus-memory-mcp", description=__doc__)
+    parser = argparse.ArgumentParser(prog="unified-memory-mcp", description=__doc__)
     parser.add_argument("--stdio", action="store_true", help="serve over stdio instead of Streamable HTTP")
     parser.add_argument("--host", default=os.environ.get("MEM0_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("MEM0_PORT", "8777")))
@@ -907,7 +907,7 @@ def main() -> int:
 
     mcp.settings.host = args.host
     mcp.settings.port = args.port
-    print(f"amadeus-memory-mcp listening on http://{args.host}:{args.port}/mcp", file=sys.stderr)
+    print(f"unified-memory-mcp listening on http://{args.host}:{args.port}/mcp", file=sys.stderr)
     print(f"  fact store : {store_mod.store_dir()} (backend: {store_mod.backend()})", file=sys.stderr)
     exe = graph_mod.codebase_memory_exe()
     print(f"  code graph : {exe or 'not installed â€” graph tools will report an error'}", file=sys.stderr)
