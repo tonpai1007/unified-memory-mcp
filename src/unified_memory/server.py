@@ -869,6 +869,106 @@ async def expired_facts(user_id: str = "amadeus", limit: int = 50) -> str:
     )
 
 
+@mcp.custom_route("/health", methods=["GET"])
+async def rest_health(request: Any) -> Any:
+    """Plain HTTP health of the memory server (for the brain and the watchdog)."""
+    from starlette.responses import JSONResponse
+
+    from .graph import codebase_memory_exe
+    from .store import backend, store_dir
+
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "unified-memory-mcp",
+            "store_dir": str(store_dir()),
+            "backend": backend(),
+            "graph_binary": codebase_memory_exe(),
+        }
+    )
+
+
+@mcp.custom_route("/facts", methods=["POST"])
+async def rest_add_fact(request: Any) -> Any:
+    """Append a fact over plain HTTP.
+
+    The brain writes here instead of speaking MCP: it has no usable MCP SDK in
+    its own virtualenv (pydantic 2.9.2 vs the SDK's 2.11 requirement), and a
+    dependency-free REST call cannot break the brain's event loop.
+    """
+    from starlette.responses import JSONResponse
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"invalid JSON body: {exc}"}, status_code=400)
+    if not isinstance(payload, dict):
+        return JSONResponse({"ok": False, "error": "body must be a JSON object"}, status_code=400)
+
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"ok": False, "error": "text is required"}, status_code=400)
+    symbols = payload.get("symbols") or []
+    metadata: dict[str, Any] = dict(payload.get("metadata") or {})
+    if payload.get("project"):
+        metadata.setdefault("project", payload["project"])
+    if payload.get("source"):
+        metadata.setdefault("source", payload["source"])
+    if payload.get("session"):
+        metadata.setdefault("session", payload["session"])
+    if payload.get("stale_after_days"):
+        metadata.setdefault(
+            "stale_after",
+            (datetime.now(timezone.utc) + timedelta(days=int(payload["stale_after_days"]))).isoformat(),
+        )
+    if symbols and "symbols" not in metadata:
+        metadata["symbols"] = symbols
+    raw = store_mod.call(
+        "add_memory",
+        {
+            "text": text,
+            "user_id": payload.get("user_id") or "amadeus",
+            "metadata": metadata or None,
+            "infer": False,
+        },
+    )
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = {}
+    rows = parsed.get("results") if isinstance(parsed, dict) else None
+    return JSONResponse({"ok": bool(rows), "id": (rows or [{}])[0].get("id"), "text": text[:200]})
+
+
+@mcp.custom_route("/facts", methods=["GET"])
+async def rest_list_facts(request: Any) -> Any:
+    """List stored facts over plain HTTP (read-only)."""
+    from starlette.responses import JSONResponse
+
+    user_id = request.query_params.get("user_id", "amadeus")
+    limit = int(request.query_params.get("limit", "50"))
+    raw = store_mod.call("get_memories", {"user_id": user_id, "top_k": limit})
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = {}
+    rows = parsed.get("results", []) if isinstance(parsed, dict) else []
+    return JSONResponse(
+        {
+            "user_id": user_id,
+            "count": len(rows),
+            "facts": [
+                {
+                    "id": row.get("id"),
+                    "memory": (row.get("memory") or "")[:300],
+                    "metadata": row.get("metadata"),
+                }
+                for row in rows[:limit]
+            ],
+        }
+    )
+
+
 def main() -> int:
     """Console entry point."""
     parser = argparse.ArgumentParser(prog="unified-memory-mcp", description=__doc__)
