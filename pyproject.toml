@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amadeus-memory-mcp"
+version = "0.1.0"
+description = "One MCP server for semantic fact memory (mem0) and a code knowledge graph (codebase-memory), with cross-linked recall."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Tonpa" }]
+keywords = ["mcp", "mem0", "codebase-memory", "knowledge-graph", "memory", "llm"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "mcp>=1.9",
+  "mem0ai>=2.2",
+  "qdrant-client>=1.14",
+  "fastembed>=0.9",
+  "loguru>=0.7",
+]
+
+[project.optional-dependencies]
+# The upstream mem0 MCP server module (Apache-2.0). When installed, its
+# `call_tool` is used verbatim so fact storage semantics match exactly.
+upstream = ["mem0-mcp-server>=0.1.0"]
+
+[project.scripts]
+amadeus-memory-mcp = "amadeus_memory.server:main"
+
+[project.urls]
+Homepage = "https://github.com/tonpai1007/amadeus-memory-mcp"
+Repository = "https://github.com/tonpai1007/amadeus-memory-mcp"
+Issues = "https://github.com/tonpai1007/amadeus-memory-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/amadeus_memory"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

@@ -1,0 +1,19 @@
+amadeus-memory-mcp
+Copyright 2026 Tonpa
+
+This product includes software developed as part of the following projects:
+
+* mem0 (https://github.com/mem0ai/mem0) — Apache License 2.0
+  Used as the semantic fact store (vector store + history bookkeeping).
+
+* mem0-mcp-server (https://github.com/zfy258/mem0-mcp-server) — Apache License 2.0
+  OPTIONAL runtime dependency. When the `mem0-mcp-server` distribution is
+  installed, its `mcp_server` module is used verbatim so that fact storage
+  semantics (store layout, history.db bookkeeping, embedder configuration)
+  match other tools in the same ecosystem exactly. The module is NOT vendored
+  into this repository; it is an ordinary dependency.
+
+* codebase-memory-mcp (https://github.com/DeusData/codebase-memory-mcp)
+  OPTIONAL external runtime dependency, invoked as a separate process. Its
+  licence is that of the upstream project; nothing from it is redistributed
+  here.
