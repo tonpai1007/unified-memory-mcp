@@ -40,6 +40,12 @@ Facts can also be **scoped to a project** (`project` on write and read) so a fin
 pip install amadeus-memory-mcp
 ```
 
+Straight from the tagged GitHub release (no PyPI account needed):
+
+```bash
+pip install "amadeus-memory-mcp @ git+https://github.com/tonpai1007/amadeus-memory-mcp@v0.1.0"
+```
+
 The fact store works standalone (the package builds the same store with
 mem0ai directly). To instead reuse the **upstream local-store** mem0 MCP
 module verbatim — identical store layout, `history.db` bookkeeping and embedder
