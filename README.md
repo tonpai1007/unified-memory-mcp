@@ -38,9 +38,20 @@ Facts can also be **scoped to a project** (`project` on write and read) so a TON
 
 ```bash
 pip install amadeus-memory-mcp
-# optional: use the upstream mem0 MCP module verbatim (Apache-2.0)
-pip install "amadeus-memory-mcp[upstream]"
 ```
+
+The fact store works standalone (the package builds the same store with
+mem0ai directly). To instead reuse the **upstream local-store** mem0 MCP
+module verbatim — identical store layout, `history.db` bookkeeping and embedder
+config — install it from git:
+
+```bash
+pip install "git+https://github.com/zfy258/mem0-mcp-server.git"
+```
+
+> Note: the PyPI distribution `mem0-mcp-server` (0.2.x) is a **hosted-API**
+> client with a different contract; this package detects that and falls back
+> to the direct mem0ai path.
 
 The code graph is an **optional external dependency** — it is not bundled:
 

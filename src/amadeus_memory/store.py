@@ -38,13 +38,24 @@ def _ensure_env() -> None:
 
 
 def _upstream_module():
-    """Return the upstream ``mcp_server`` module if it is importable."""
+    """Return the upstream local-store module if it is usable.
+
+    Two distributions exist and they are NOT interchangeable:
+      * the git build (https://github.com/zfy258/mem0-mcp-server, module
+        ``mcp_server``) — a LOCAL store (embedded Qdrant + history db) with
+        a ``call_tool`` dispatcher; this is the one we mirror;
+      * the PyPI build (0.2.x, module ``mem0_mcp_server.server``) — a HOSTED
+        mem0 API client (needs an API key, no local store, no call_tool).
+    The hosted variant is therefore ignored and the direct mem0ai path is used
+    instead.
+    """
     try:
         import mcp_server  # type: ignore
-
-        return mcp_server
     except ModuleNotFoundError:
         return None
+    if not hasattr(mcp_server, "call_tool"):
+        return None
+    return mcp_server
 
 
 def _build_direct_memory():

@@ -21,7 +21,9 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-  "mcp>=1.9",
+  # Pinned to the 1.x API: in MCP SDK 2.x FastMCP was renamed to MCPServer and
+  # the tool/context APIs changed (see the SDK's v2 migration guide).
+  "mcp>=1.9,<2",
   "mem0ai>=2.2",
   "qdrant-client>=1.14",
   "fastembed>=0.9",
@@ -29,8 +31,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The upstream mem0 MCP server module (Apache-2.0). When installed, its
-# `call_tool` is used verbatim so fact storage semantics match exactly.
+# The upstream LOCAL-store mem0 MCP server (Apache-2.0). Installed from git on
+# purpose: the PyPI distribution of the same name (0.2.x) is a hosted-API
+# client with a different contract, so it is not interchangeable.
+#   pip install "git+https://github.com/zfy258/mem0-mcp-server.git"
+# When it is absent the package builds the same store with mem0ai directly.
 upstream = ["mem0-mcp-server>=0.1.0"]
 
 [project.scripts]
