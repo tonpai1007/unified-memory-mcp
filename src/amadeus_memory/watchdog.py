@@ -34,6 +34,11 @@ START_GRACE_SECONDS = float(os.environ.get("AMADEUS_WATCHDOG_GRACE_SECONDS", "12
 REFRESH_MINUTES = float(os.environ.get("CODEBASE_MEMORY_REFRESH_MINUTES", "0"))
 REFRESH_TARGETS = os.environ.get("CODEBASE_MEMORY_REFRESH_TARGETS", "")
 REFRESH_MODE = os.environ.get("CODEBASE_MEMORY_REFRESH_MODE", "fast")
+# Optional extra services to supervise alongside the memory server, e.g. a
+# companion gateway on another port:
+#   EXTRA_SERVICES="Name|port|command|Name2|port2|command2"
+# The command may contain spaces; only the first two fields are split on "|".
+EXTRA_SERVICES = os.environ.get("AMADEUS_WATCHDOG_EXTRA_SERVICES", "")
 LOG_PATH = Path(os.environ.get("TEMP", str(Path.home()))) / "amadeus_memory_watchdog.log"
 MAX_LOG_BYTES = 1024 * 1024
 
@@ -128,10 +133,56 @@ def _refresh_loop() -> None:
         time.sleep(max(60.0, REFRESH_MINUTES * 60.0))
 
 
+def _extra_services() -> list[dict]:
+    """Parse EXTRA_SERVICES into supervised service descriptors.
+
+    Format: ``Name|port|command`` repeated, separated by further pipes. The
+    command is the last field of each triple, so it may contain spaces.
+    """
+    services: list[dict] = []
+    fields = [f for f in EXTRA_SERVICES.split("|") if f != ""]
+    index = 0
+    while index + 2 < len(fields):
+        name = fields[index]
+        try:
+            port = int(fields[index + 1])
+        except ValueError:
+            break
+        command = fields[index + 2]
+        services.append({"name": name, "port": port, "command": command, "cwd": os.getcwd()})
+        index += 3
+    return services
+
+
+def start_extra(service: dict) -> bool:
+    """Start one extra service if its port is not answering."""
+    if port_alive(service["port"]):
+        return False
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    try:
+        subprocess.Popen(
+            service["command"],
+            cwd=service.get("cwd") or os.getcwd(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+        log(f"watchdog: started {service['name']} on {HOST}:{service['port']}")
+        _last_started[service["name"]] = time.time()
+        return True
+    except Exception as exc:
+        log(f"watchdog: failed to start {service['name']}: {exc!r}")
+        return False
+
+
 def main() -> int:
     log(f"watchdog: started (pid {os.getpid()}) monitoring {HOST}:{PORT}")
     if start_server():
         time.sleep(10)
+    extras = _extra_services()
+    for service in extras:
+        if start_extra(service):
+            time.sleep(5)
     if REFRESH_MINUTES > 0 and REFRESH_TARGETS:
         threading.Thread(target=_refresh_loop, name="cbm-refresh", daemon=True).start()
         log(f"watchdog: graph refresher every {REFRESH_MINUTES:.0f} min -> {REFRESH_TARGETS}")
@@ -143,6 +194,12 @@ def main() -> int:
                     continue  # still booting
                 log("watchdog: amadeus-memory not answering -> restarting")
                 start_server()
+            for service in extras:
+                if not port_alive(service["port"]):
+                    if (time.time() - _last_started.get(service["name"], 0.0)) < START_GRACE_SECONDS:
+                        continue
+                    log(f"watchdog: {service['name']} not answering -> restarting")
+                    start_extra(service)
         except KeyboardInterrupt:
             log("watchdog: interrupted")
             return 0
