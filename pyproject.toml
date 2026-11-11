@@ -31,12 +31,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The upstream LOCAL-store mem0 MCP server (Apache-2.0). Installed from git on
-# purpose: the PyPI distribution of the same name (0.2.x) is a hosted-API
-# client with a different contract, so it is not interchangeable.
+# NOTE: there is no "upstream" extra on purpose. The upstream LOCAL-store mem0
+# MCP module (Apache-2.0) is installed from git, not from PyPI:
 #   pip install "git+https://github.com/zfy258/mem0-mcp-server.git"
-# When it is absent the package builds the same store with mem0ai directly.
-upstream = ["mem0-mcp-server>=0.1.0"]
+# The PyPI distribution of the same name (0.2.x) is a HOSTED-API client with a
+# different contract; the package detects it and uses the direct mem0ai path
+# instead (see amadeus_memory.store). An extra cannot express the git URL
+# because PyPI rejects direct references in dependencies.
 
 [project.scripts]
 amadeus-memory-mcp = "amadeus_memory.server:main"
