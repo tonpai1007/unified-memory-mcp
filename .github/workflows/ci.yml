@@ -29,6 +29,9 @@ jobs:
       - name: Smoke test
         run: python tests/smoke_test.py
 
+      - name: Write-dedupe test
+        run: python tests/test_write_dedupe.py
+
       - name: Lint
         run: |
           pip install ruff

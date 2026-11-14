@@ -113,6 +113,43 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def find_near_duplicate(
+    text: str,
+    user_id: str,
+    threshold: float = MIN_SIMILARITY,
+    top_k: int = 500,
+) -> dict[str, Any] | None:
+    """Nearest already-stored fact whose token-Jaccard similarity is >= threshold.
+
+    Read-only write-side guard: callers check BEFORE inserting, so repeated
+    writes of the same fact stop accumulating near-duplicate rows (the thing
+    ``memory_dedupe`` would only clean up afterwards). Expired facts are
+    skipped — a fact past its TTL must not block a fresh restatement.
+    Returns ``{"id", "memory", "similarity", "created_at"}`` or None.
+    """
+    from .store import expiry_of
+
+    tokens = _tokens(text)
+    if not tokens:
+        return None
+    rows = store_mod.mem0_rows(store_mod.call("get_memories", {"user_id": user_id, "top_k": top_k}))
+    best: dict[str, Any] | None = None
+    best_score = 0.0
+    for row in rows:
+        if expiry_of(row).get("expired"):
+            continue
+        score = _jaccard(tokens, _tokens(row.get("memory") or ""))
+        if score >= threshold and score > best_score:
+            best_score = score
+            best = {
+                "id": row.get("id"),
+                "memory": (row.get("memory") or "")[:400],
+                "similarity": round(score, 3),
+                "created_at": row.get("created_at"),
+            }
+    return best
+
+
 def audit(user_id: str = "amadeus", duplicate_threshold: float = 0.82) -> dict[str, Any]:
     """Audit the fact store: scope coverage, duplicates, expiry, provenance."""
     rows = store_mod.mem0_rows(store_mod.call("get_memories", {"user_id": user_id, "top_k": 500}))

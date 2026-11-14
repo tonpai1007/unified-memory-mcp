@@ -31,7 +31,7 @@ This package serves both surfaces from **one process** over Streamable HTTP, and
 | `memory_scope_facts` | *Stop one project's facts polluting another's recalls* — assigns a project scope (metadata only, dry run by default) |
 | `memory_dedupe` | *Remove the same fact stored twice* — deletes near-duplicate rows, keeping the oldest (dry run by default) |
 | `memory_purge_expired` | *Clean up facts that decayed* — deletes TTL-expired facts (dry run by default) |
-| `remember_fact(text, symbols=[…])` | *Store a fact and pin it to the code it describes* — the symbol is resolved to its qualified name + file and kept in the fact's metadata |
+| `remember_fact(text, symbols=[...])` | *Store a fact and pin it to the code it describes* - the symbol is resolved to its qualified name + file and kept in the fact's metadata. Write-side dedup: a near-identical fact (token Jaccard >= 0.82) in the same scope returns the existing id (`duplicate_of`) instead of inserting a second row; `dedupe: false` stores anyway |
 | `recall(query)` | *Give me the answer and the code* — one fused call over facts **and** graph symbols, with `facts_linked_to_code` calling out the overlap |
 | `facts_for_symbol(symbol)` | *What do we know about this function?* — the reverse index |
 | `fact_freshness(memory_id)` | *Is this old fact still true?* — re-checks that every linked symbol still exists, that no file moved, and that the fact's TTL has not passed |

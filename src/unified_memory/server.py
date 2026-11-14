@@ -284,6 +284,7 @@ async def add_memory(
     stale_after_days: int | None = None,
     stale_after: str | None = None,
     infer: bool = False,
+    dedupe: bool = True,
 ) -> str:
     meta = dict(metadata or {})
     session_id = _session_id_from(ctx)
@@ -295,6 +296,19 @@ async def add_memory(
         meta["stale_after"] = stale_after
     elif stale_after_days and stale_after_days > 0 and not meta.get("stale_after"):
         meta["stale_after"] = (datetime.now(timezone.utc) + timedelta(days=stale_after_days)).isoformat()
+    if dedupe:
+        from .vitals import find_near_duplicate
+
+        twin = find_near_duplicate(text, user_id)
+        if twin:
+            return _dump(
+                {
+                    "stored": None,
+                    "duplicate_of": twin,
+                    "text": text[:400],
+                    "note": "A near-identical fact already exists; nothing was written. Pass dedupe=false to store anyway.",
+                }
+            )
     return _mem0(
         "add_memory",
         {"text": text, "user_id": user_id, "agent_id": agent_id, "metadata": meta, "infer": infer},
@@ -546,12 +560,28 @@ async def remember_fact(
     agent_id: str | None = None,
     stale_after_days: int | None = None,
     stale_after: str | None = None,
+    dedupe: bool = True,
 ) -> str:
     project = project or await _default_project()
     links: list[dict[str, Any]] = []
     for symbol in symbols or []:
         resolved = await _resolve_symbol(symbol, project)
         links.append(resolved or {"symbol": symbol, "qualified_name": None, "file": None, "kind": ""})
+    if dedupe:
+        from .vitals import find_near_duplicate
+
+        twin = find_near_duplicate(text, user_id)
+        if twin:
+            return _dump(
+                {
+                    "stored": twin["id"],
+                    "duplicate_of": twin,
+                    "text": text[:400],
+                    "linked_symbols": links,
+                    "project": project,
+                    "note": "A near-identical fact already exists; the existing id is returned and nothing was written. Pass dedupe=false to store anyway.",
+                }
+            )
     metadata: dict[str, Any] = {"project": project}
     if links:
         metadata["symbols"] = links
@@ -923,6 +953,18 @@ async def rest_add_fact(request: Any) -> Any:
         )
     if symbols and "symbols" not in metadata:
         metadata["symbols"] = symbols
+    dedupe = bool(payload.get("dedupe", True))
+    if dedupe:
+        from .vitals import find_near_duplicate
+
+        twin = find_near_duplicate(text, str(payload.get("user_id") or "amadeus"))
+        if twin:
+            # Idempotent write: satisfied, no new row, the caller gets the
+            # existing fact's id instead of a fresh one.
+            return JSONResponse(
+                {"ok": True, "duplicate_of": twin, "id": twin["id"], "text": text[:200]},
+                status_code=200,
+            )
     raw = store_mod.call(
         "add_memory",
         {

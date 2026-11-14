@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Write-side dedup** (caveat #6): the three write paths — MCP `add_memory`, MCP `remember_fact` and REST `POST /facts` — now check for a near-identical fact (token Jaccard ≥ 0.82, the same threshold `memory_dedupe`/`memory_audit` use) in the same user scope **before** inserting. On a hit nothing is written: the tools return `{"stored": null/…, "duplicate_of": {id, similarity, …}}` and the REST endpoint answers `200 {ok: true, duplicate_of: …}` idempotently, so the brain's fire-and-forget write-back cannot pile up duplicate rows when the same event fires twice. Expired facts never block a fresh restatement, and every path takes `dedupe: false` to store anyway. `tests/test_write_dedupe.py` covers all three paths against a faked store (no real store, no graph binary).
+
+### Added
 - **System vitals** (`system_vitals`): one call that answers "is the whole system OK?" — brain status and uptime, scheduler job count, open circuit breakers, dead-letter queue depth, vault reachability, response-cache hit rate. Reads the brain's HTTP API (`AMADEUS_BRAIN_URL`, default `http://127.0.0.1:8000`) and reports `unreachable` instead of failing when the brain is down.
 - **Memory hygiene** tools, because the fact store accumulates untidy rows:
   - `memory_audit` — scope coverage per project, unscoped facts, expired facts, facts without provenance or symbol links, and near-duplicate pairs (token Jaccard).
