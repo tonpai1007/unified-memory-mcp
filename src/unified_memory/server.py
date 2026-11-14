@@ -1069,6 +1069,7 @@ async def rest_health(request: Any) -> Any:
     from starlette.responses import JSONResponse
 
     from .graph import codebase_memory_exe
+    from .rss import self_rss_mb
     from .store import backend, store_dir
 
     try:
@@ -1079,6 +1080,8 @@ async def rest_health(request: Any) -> Any:
                 "store_dir": str(store_dir()),
                 "backend": backend(),
                 "graph_binary": codebase_memory_exe(),
+                "rss_mb": self_rss_mb(),
+                "pid": os.getpid(),
             }
         )
     except Exception as exc:  # a dying health check is worse than a loud one

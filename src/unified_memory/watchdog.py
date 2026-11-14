@@ -109,6 +109,27 @@ def log(message: str) -> None:
     print(line, flush=True)
 
 
+# RSS check moved to the server side (rss.py) — the watchdog's tracked
+# subprocess is the venv-python wrapper, not the real worker the user feels.
+def terminate_service(name: str) -> bool:
+    proc = _spawned.get(name)
+    if proc is None:
+        return False
+    try:
+        if proc.poll() is not None:
+            return True  # already dead
+        proc.terminate()
+        try:
+            proc.wait(timeout=8)
+            return True
+        except Exception:
+            proc.kill()
+            return True
+    except Exception as exc:
+        log(f"watchdog: terminate({name}) failed: {exc!r}")
+        return False
+
+
 def port_alive(port: int) -> bool:
     try:
         with socket.create_connection((HOST, port), timeout=2):
@@ -263,6 +284,8 @@ def main() -> int:
                 for line in _capture_child_tail("server"):
                     log(line)
                 start_server()
+                continue
+
             for service in extras:
                 if not port_alive(service["port"]):
                     if (time.time() - _last_started.get(service["name"], 0.0)) < START_GRACE_SECONDS:
