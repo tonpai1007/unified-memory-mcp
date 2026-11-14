@@ -2,6 +2,23 @@
 
 **One MCP server for two memory surfaces: semantic facts (mem0) and a code knowledge graph (codebase-memory) — plus the join between them.**
 
+## Objective
+
+**Cut the tokens AI coding agents spend re-discovering a codebase.**
+
+Every LLM agent session without persistent memory of your code starts cold: it greps for symbols, re-reads whole directories, dumps entire files into the context window — and pays that same price again in every next session, on every question, from scratch. That is not a tool problem; it is a memory deficit.
+
+This package is the fix: one shared, always-on memory of what an agent learned *about the code* (the graph — symbols, calls, structure) and *about the decisions* (the facts — what you did last week, why, and which code it touched). Two halves, fused into one callable surface, available to every agent on the machine through one URL.
+
+Working definitions:
+
+- **Cold question** — "what does this function do / who calls it / what did we decide about this module?" without memory: symbol lookup + file dumps + greps, repeated every session.
+- **Warm question** — same question asked of the memory: one tool call, a few hundred tokens, correct answer *and the code it lives in*.
+
+Success test, honest, measurable, and deliberately narrow: an agent asking any graph or recall question should never again answer it by re-reading files it already paid for. If memory is warm, it answers from memory; if it isn't, it reads once and writes the answer into memory so nobody pays for it twice.
+
+Everything else in this repo — the warm graph child, scoped facts, write-side dedup, fused `recall`, TTL — is the machinery to make that one goal hold under real use. If any future change doesn't serve the objective above, it's scope creep; leave it out.
+
 Two MCP servers used to live behind stdio transport. MCP stdio means *the client spawns the server*, so every editor session and every project directory got its own copy. On one machine that was 13+ processes and ~1 GB of RAM for the same two servers — and the fact store's embedded Qdrant collection is single-process locked, so the extra copies were contending for the same lock instead of adding capacity.
 
 This package serves both surfaces from **one process** over Streamable HTTP, and adds what merging makes possible: facts can be linked to the symbols they describe, so recall returns the answer *and* the code.
