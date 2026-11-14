@@ -65,6 +65,22 @@ def _exit_code(name: str) -> int | None:
         return None
 
 
+def _capture_child_tail(name: str, lines: int = 40) -> list[str]:
+    """Read the last lines of the child's stderr/stdout log into the watchdog log.
+
+    The server writes to unified_memory_server.log; when it dies we can't afford to
+    lose the evidence — the watchdog log is where every operator starts."""
+    log = Path(os.environ.get("TEMP", str(Path.home()))) / "unified_memory_server.log"
+    if not log.exists():
+        return [f"watchdog: (no child log at {log})"]
+    try:
+        content = log.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"watchdog: (unreadable child log: {exc})"]
+    tail = content.splitlines()[-lines:]
+    return [f"watchdog: {name} exited key snippet:"] + [f"  {line}" for line in tail]
+
+
 def _recent_restarts(name: str) -> int:
     now = time.time()
     history = [t for t in _restart_history.get(name, []) if now - t < CRASH_WINDOW_SECONDS]
@@ -244,6 +260,8 @@ def main() -> int:
                     f"watchdog: amadeus-memory not answering; exit_code={_exit_code('server')}; "
                     f"restarts in window: {_recent_restarts('server') + 1} -> restarting"
                 )
+                for line in _capture_child_tail("server"):
+                    log(line)
                 start_server()
             for service in extras:
                 if not port_alive(service["port"]):
