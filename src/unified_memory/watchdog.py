@@ -39,10 +39,45 @@ REFRESH_MODE = os.environ.get("CODEBASE_MEMORY_REFRESH_MODE", "fast")
 #   EXTRA_SERVICES="Name|port|command|Name2|port2|command2"
 # The command may contain spaces; only the first two fields are split on "|".
 EXTRA_SERVICES = os.environ.get("AMADEUS_WATCHDOG_EXTRA_SERVICES", "")
+
+# Crash-loop breaker: if the same service dies more than this many times in
+# CRASH_WINDOW seconds, stop restarting it and scream — the old behaviour
+# thrashed forever, each restart costing 8-27 s of cold warm-up.
+CRASH_WINDOW_SECONDS = float(os.environ.get("AMADEUS_WATCHDOG_CRASH_WINDOW", "600"))
+CRASH_LIMIT = int(os.environ.get("AMADEUS_WATCHDOG_CRASH_LIMIT", "5"))
 LOG_PATH = Path(os.environ.get("TEMP", str(Path.home()))) / "unified_memory_watchdog.log"
 MAX_LOG_BYTES = 1024 * 1024
 
 _last_started: dict[str, float] = {}
+# Live child handles per service, used to surface exit codes on failure
+_spawned: dict[str, subprocess.Popen] = {}
+# Timestamps of recent restarts per service, for the crash-loop breaker
+_restart_history: dict[str, list[float]] = {}
+
+
+def _exit_code(name: str) -> int | None:
+    proc = _spawned.get(name)
+    if proc is None:
+        return None
+    try:
+        return proc.poll()
+    except Exception:
+        return None
+
+
+def _recent_restarts(name: str) -> int:
+    now = time.time()
+    history = [t for t in _restart_history.get(name, []) if now - t < CRASH_WINDOW_SECONDS]
+    _restart_history[name] = history
+    return len(history)
+
+
+def _note_restart(name: str) -> None:
+    _restart_history.setdefault(name, []).append(time.time())
+
+
+def _should_restart(name: str) -> bool:
+    return _recent_restarts(name) < CRASH_LIMIT
 
 
 def log(message: str) -> None:
@@ -80,14 +115,16 @@ def start_server() -> bool:
     except OSError:
         handle = subprocess.DEVNULL
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [sys.executable, "-m", "unified_memory.server"],
             env=env,
             stdout=handle,
             stderr=handle,
             creationflags=creationflags,
         )
-        log(f"watchdog: started amadeus-memory on {HOST}:{PORT} (log: {log_path})")
+        _spawned["server"] = proc
+        _note_restart("server")
+        log(f"watchdog: started amadeus-memory on {HOST}:{PORT} (pid {proc.pid}, log: {log_path})")
         _last_started["server"] = time.time()
         return True
     except Exception as exc:
@@ -160,14 +197,16 @@ def start_extra(service: dict) -> bool:
         return False
     creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             service["command"],
             cwd=service.get("cwd") or os.getcwd(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=creationflags,
         )
-        log(f"watchdog: started {service['name']} on {HOST}:{service['port']}")
+        _spawned[service["name"]] = proc
+        _note_restart(service["name"])
+        log(f"watchdog: started {service['name']} on {HOST}:{service['port']} (pid {proc.pid})")
         _last_started[service["name"]] = time.time()
         return True
     except Exception as exc:
@@ -192,13 +231,32 @@ def main() -> int:
             if not port_alive(PORT):
                 if (time.time() - _last_started.get("server", 0.0)) < START_GRACE_SECONDS:
                     continue  # still booting
-                log("watchdog: amadeus-memory not answering -> restarting")
+                if not _should_restart("server"):
+                    recent = _recent_restarts("server")
+                    log(
+                        f"watchdog: amadeus-memory not answering; exit_code={_exit_code('server')}; "
+                        f"{recent} restarts in {CRASH_WINDOW_SECONDS:.0f}s — STOPPING supervision. "
+                        "Fix the server (see unified_memory_server.log) or raise AMADEUS_WATCHDOG_CRASH_LIMIT."
+                    )
+                    time.sleep(CHECK_INTERVAL)
+                    continue
+                log(
+                    f"watchdog: amadeus-memory not answering; exit_code={_exit_code('server')}; "
+                    f"restarts in window: {_recent_restarts('server') + 1} -> restarting"
+                )
                 start_server()
             for service in extras:
                 if not port_alive(service["port"]):
                     if (time.time() - _last_started.get(service["name"], 0.0)) < START_GRACE_SECONDS:
                         continue
-                    log(f"watchdog: {service['name']} not answering -> restarting")
+                    if not _should_restart(service["name"]):
+                        recent = _recent_restarts(service["name"])
+                        log(
+                            f"watchdog: {service['name']} not answering; exit_code={_exit_code(service['name'])}; "
+                            f"{recent} restarts in {CRASH_WINDOW_SECONDS:.0f}s — STOPPING supervision."
+                        )
+                        continue
+                    log(f"watchdog: {service['name']} not answering; exit_code={_exit_code(service['name'])} -> restarting")
                     start_extra(service)
         except KeyboardInterrupt:
             log("watchdog: interrupted")
