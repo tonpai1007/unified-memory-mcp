@@ -36,6 +36,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -61,32 +62,79 @@ mcp = FastMCP(
 
 # â”€â”€ defaults â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _default_project_cache: str | None = None
+_PROJECT_LIST_CACHE: list[dict[str, Any]] | None = None
+_PROJECT_LIST_TTL = 300.0
+_project_list_cache_at: float = 0.0
 
 
-async def _default_project() -> str:
-    """Resolve the default project: env override, else the CWD's own project."""
+async def _indexed_projects() -> list[dict[str, Any]]:
+    """Indexed projects from the code graph, cached for 5 minutes."""
+    global _PROJECT_LIST_CACHE, _project_list_cache_at
+    now = time.time()
+    if _PROJECT_LIST_CACHE is None or now - _project_list_cache_at > _PROJECT_LIST_TTL:
+        try:
+            raw = await graph_mod.call("list_projects", {})
+            data = json.loads(raw)
+            _PROJECT_LIST_CACHE = data.get("projects") or []
+        except Exception as exc:
+            # The graph may be unavailable (binary not installed) — the fact
+            # side must keep working, so this is a soft fallback, not an error.
+            print(f"[amadeus-memory] list_projects failed: {exc!r}", file=sys.stderr)
+            _PROJECT_LIST_CACHE = []
+        _project_list_cache_at = now
+    return _PROJECT_LIST_CACHE
+
+
+def _project_for_directory(directory: str, projects: list[dict[str, Any]]) -> str | None:
+    """Match a filesystem directory to an indexed project.
+
+    Matches on the root path first (exact, case-insensitive), then on the
+    project-name suffix, because codebase-memory names projects
+    ``C-<path-with-dashes>``.
+    """
+    if not directory or not projects:
+        return None
+    wanted = os.path.normcase(os.path.normpath(os.path.abspath(os.path.expanduser(directory))))
+    folder = os.path.basename(wanted).upper()
+    for project in projects:
+        root = str(project.get("root_path", ""))
+        if root and os.path.normcase(os.path.normpath(root)) == wanted:
+            return str(project["name"])
+    for project in projects:
+        name = str(project.get("name", "")).upper()
+        if name.endswith(folder):
+            return str(project["name"])
+    return None
+
+
+async def _default_project(cwd_hint: str | None = None) -> str:
+    """Resolve the default project for a graph call.
+
+    Priority: explicit env override → the CALLER's working directory (matched
+    against the indexed projects) → the deployment's cached fallback. The MCP
+    server's own CWD never changes, so a codebase-aware default can only come
+    from the caller's `_meta` hint or an explicit ``project=`` argument.
+    """
     global _default_project_cache
     override = os.environ.get("CODEBASE_MEMORY_PROJECT")
     if override:
         return override
+    if cwd_hint:
+        projects = await _indexed_projects()
+        matched = _project_for_directory(cwd_hint, projects)
+        if matched:
+            return matched
     if _default_project_cache:
         return _default_project_cache
-    # Fall back to the first indexed project (best effort, non-blocking).
-    try:
-        raw = await graph_mod.call("list_projects", {})
-        data = json.loads(raw)
-        projects = data.get("projects") or []
-        if projects:
-            folder = os.path.basename(os.getcwd()).upper()
-            for project in projects:
-                if str(project.get("name", "")).upper().endswith(folder):
-                    _default_project_cache = str(project["name"])
-                    return _default_project_cache
-            _default_project_cache = str(projects[0]["name"])
-    except Exception as exc:
-        # The graph may be unavailable (binary not installed) — the fact side
-        # must keep working, so this is a soft fallback, not an error.
-        print(f"[amadeus-memory] project auto-detect failed: {exc!r}", file=sys.stderr)
+    projects = await _indexed_projects()
+    if projects:
+        # Static fallback: the deployment directory's own project, else the
+        # first indexed project. Cached once — the hint above wins per call.
+        folder = os.path.basename(os.getcwd()).upper()
+        _default_project_cache = _project_for_directory(os.getcwd(), projects) or (
+            next((str(p["name"]) for p in projects if str(p.get("name", "")).upper().endswith(folder)), str(projects[0]["name"]))
+        )
+        return _default_project_cache
     return ""
 
 
@@ -117,6 +165,23 @@ def _session_id_from(ctx: Any) -> str | None:
     OpenCode sends ``ai.opencode/sessionID`` in ``_meta``; capturing it
     automatically means every stored fact records which session produced it.
     """
+    return _meta_extra(ctx, ("ai.opencode/sessionID", "sessionId", "session_id"))
+
+
+def _cwd_hint_from(ctx: Any) -> str | None:
+    """Best-effort working directory of the CALLING session from _meta.
+
+    The MCP server's own CWD never changes (it runs from the deployment
+    directory), so a codebase-aware default must come from the caller. Some
+    clients send the session's directory in _meta under one of these keys;
+    when none is present this returns None and the caller falls back to the
+    deployment default or passes ``project`` explicitly.
+    """
+    return _meta_extra(ctx, ("ai.opencode/directory", "ai.opencode/cwd", "workingDirectory", "directory", "cwd"))
+
+
+def _meta_extra(ctx: Any, keys: tuple[str, ...]) -> str | None:
+    """Read the first present key out of the MCP request _meta extras."""
     try:
         meta = ctx.request_context.meta
     except Exception:
@@ -125,11 +190,14 @@ def _session_id_from(ctx: Any) -> str | None:
         return None
     extra = getattr(meta, "model_extra", None)
     if isinstance(extra, dict):
-        for key in ("ai.opencode/sessionID", "sessionId", "session_id"):
+        for key in keys:
             if extra.get(key):
                 return str(extra[key])
-    value = getattr(meta, "ai.opencode/sessionID", None)
-    return str(value) if value else None
+    for key in keys:
+        value = getattr(meta, key, None)
+        if value:
+            return str(value)
+    return None
 
 
 def _mem0_rows(raw: str) -> list[dict[str, Any]]:
@@ -356,6 +424,30 @@ async def delete_all_memories(user_id: str | None = None, agent_id: str | None =
 
 
 # â”€â”€ graph tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@mcp.tool(
+    description=(
+        "List the code knowledge graph's indexed projects (name + root path). "
+        "Every graph tool takes a ``project`` argument - call this first when "
+        "working on a codebase other than the deployment default."
+    )
+)
+async def graph_projects() -> str:
+    projects = await _indexed_projects()
+    return _dump(
+        {
+            "total": len(projects),
+            "projects": [
+                {"name": p.get("name"), "root_path": p.get("root_path")} for p in projects
+            ],
+            "default_project": os.environ.get("CODEBASE_MEMORY_PROJECT") or None,
+            "hint": (
+                "Pass project=<name> explicitly on graph/fact tools when you are working "
+                "outside the default project."
+            ),
+        }
+    )
+
+
 @mcp.tool(description="Find symbols in the code knowledge graph by name pattern.")
 async def search_graph(
     name_pattern: str | None = None,
@@ -562,7 +654,7 @@ async def remember_fact(
     stale_after: str | None = None,
     dedupe: bool = True,
 ) -> str:
-    project = project or await _default_project()
+    project = project or await _default_project(_cwd_hint_from(ctx))
     links: list[dict[str, Any]] = []
     for symbol in symbols or []:
         resolved = await _resolve_symbol(symbol, project)
@@ -622,7 +714,7 @@ async def recall(
     top_k: int = 5,
     include_code: bool = True,
 ) -> str:
-    project = project or await _default_project()
+    project = project or await _default_project(_cwd_hint_from(ctx))
     found = _search_facts(query, user_id, top_k, project)
     facts = found["results"]
     code_rows: list[dict[str, Any]] = []
@@ -722,7 +814,7 @@ async def fact_freshness(memory_id: str, project: str | None = None) -> str:
         return _dump({"error": f"fact {memory_id} not found"})
     fact = rows[0]
     meta = fact.get("metadata") or {}
-    project = project or meta.get("project") or _default_project()
+    project = project or meta.get("project") or await _default_project()
     checks = []
     for link in meta.get("symbols", []) or []:
         symbol = link.get("symbol") or ""
@@ -772,7 +864,7 @@ async def fact_impact(
         return _dump({"error": f"fact {memory_id} not found"})
     fact = rows[0]
     meta = fact.get("metadata") or {}
-    project = project or meta.get("project") or _default_project()
+    project = project or meta.get("project") or await _default_project()
     symbols: list[dict[str, Any]] = []
     for link in meta.get("symbols", []) or []:
         name = link.get("symbol") or ""

@@ -39,6 +39,9 @@ This package serves both surfaces from **one process** over Streamable HTTP, and
 
 Facts can also be **scoped to a project** (`project` on write and read) so a finding from one project never pollutes another project's recall, **tagged with their session** (captured automatically from the MCP request `_meta`), and given a **TTL** (`stale_after_days` / `stale_after`) so facts about code decay instead of being trusted forever.
 
+
+**Any codebase, not just the deployment default.** The code graph indexes every project it was pointed at; `graph_projects` lists them with their root paths. `remember_fact` / `recall` pick up the calling session's working directory from the MCP `_meta` and match it to an indexed project automatically; for every other graph tool pass `project=<name>` explicitly (or set `CODEBASE_MEMORY_PROJECT` to pin one deployment-wide).
+
 ## Install
 
 ```bash

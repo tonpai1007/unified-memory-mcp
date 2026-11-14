@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Caller-aware default project** (portability): the MCP server's own CWD never changes, so the default project for graph/fact calls was frozen at boot and every other codebase needed an explicit `project=`. Now: `remember_fact` and `recall` read the caller's working directory from the MCP `_meta` (`ai.opencode/directory` best-effort) and match it against the indexed projects (exact root path first, then the `C-<path>` name suffix); an explicit `project=` argument still wins, and the env override still beats everything. `graph_projects` is a new discovery tool — lists every indexed project with its root path and names the deployment default, so working on any codebase is: list → pass `project=<name>`.
+- Also fixed a latent bug found while touching this path: `fact_freshness` and `fact_impact` called the async `_default_project()` without `await`, so with no explicit `project` and no fact scope the symbol resolution received a coroutine object instead of a project name.
+
+### Added
 - **Write-side dedup** (caveat #6): the three write paths — MCP `add_memory`, MCP `remember_fact` and REST `POST /facts` — now check for a near-identical fact (token Jaccard ≥ 0.82, the same threshold `memory_dedupe`/`memory_audit` use) in the same user scope **before** inserting. On a hit nothing is written: the tools return `{"stored": null/…, "duplicate_of": {id, similarity, …}}` and the REST endpoint answers `200 {ok: true, duplicate_of: …}` idempotently, so the brain's fire-and-forget write-back cannot pile up duplicate rows when the same event fires twice. Expired facts never block a fresh restatement, and every path takes `dedupe: false` to store anyway. `tests/test_write_dedupe.py` covers all three paths against a faked store (no real store, no graph binary).
 
 ### Added

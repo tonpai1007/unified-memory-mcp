@@ -32,6 +32,9 @@ jobs:
       - name: Write-dedupe test
         run: python tests/test_write_dedupe.py
 
+      - name: Project portability test
+        run: python tests/test_project_dynamic.py
+
       - name: Lint
         run: |
           pip install ruff
