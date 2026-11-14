@@ -85,21 +85,29 @@ async def _indexed_projects() -> list[dict[str, Any]]:
     return _PROJECT_LIST_CACHE
 
 
+def _norm_dir(path: str) -> str:
+    """Separator-agnostic directory normaliser (works with Windows roots on any OS)."""
+    return os.path.expanduser(str(path or "")).replace("\\", "/").rstrip("/").lower()
+
+
 def _project_for_directory(directory: str, projects: list[dict[str, Any]]) -> str | None:
     """Match a filesystem directory to an indexed project.
 
-    Matches on the root path first (exact, case-insensitive), then on the
-    project-name suffix, because codebase-memory names projects
-    ``C-<path-with-dashes>``.
+    Matches on the root path first (case- and separator-insensitive — the
+    index stores Windows roots as ``C:/...`` while callers may send ``C:\\...``
+    and CI runs on Linux), then on the project-name suffix, because
+    codebase-memory names projects ``C-<path-with-dashes>``.
     """
     if not directory or not projects:
         return None
-    wanted = os.path.normcase(os.path.normpath(os.path.abspath(os.path.expanduser(directory))))
-    folder = os.path.basename(wanted).upper()
+    wanted = _norm_dir(directory)
+    folder = wanted.rsplit("/", 1)[-1].upper() if wanted else ""
     for project in projects:
-        root = str(project.get("root_path", ""))
-        if root and os.path.normcase(os.path.normpath(root)) == wanted:
+        root = _norm_dir(str(project.get("root_path", "")))
+        if root and root == wanted:
             return str(project["name"])
+    if not folder:
+        return None
     for project in projects:
         name = str(project.get("name", "")).upper()
         if name.endswith(folder):
