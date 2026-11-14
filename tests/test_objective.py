@@ -77,6 +77,7 @@ def test_recall_returns_bounded_honest_payload(monkeypatch):
     # agents must see index health, not a blind answer
     assert data["coverage"]["refresh_may_help"] is True
     assert "skipped 7 paths" in data["coverage"]["note"]
+    assert "stale_linked_facts" in data
     # the whole point: bounded response bytes
     assert len(payload.encode("utf-8")) < 2000
 

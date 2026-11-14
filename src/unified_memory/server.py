@@ -629,7 +629,12 @@ async def index_status(project: str | None = None, verbose: bool | None = None) 
     return await graph_mod.call("index_status", args)
 
 
-@mcp.tool(description="Index (or re-index) a repository into the code knowledge graph.")
+@mcp.tool(
+    description=(
+        "Index (or re-index) a repository into the code knowledge graph. Defaults to fast mode, "
+        "which filters out vendored/generated/build directories; pass mode='full' for a full build."
+    )
+)
 async def index_repository(
     repo_path: str,
     mode: str | None = None,
@@ -639,9 +644,11 @@ async def index_repository(
 ) -> str:
     return await graph_mod.call(
         "index_repository",
+        # the binary's "fast" mode does its own filtering of dist/node_modules/.venv/build trees;
+        # full re-indexes are meaningfully heavier and should be explicit.
         {
             "repo_path": repo_path,
-            "mode": mode,
+            "mode": mode or "fast",
             "name": name,
             "target_projects": target_projects,
             "persistence": persistence,
@@ -773,12 +780,24 @@ async def recall(
     hit_qns = {row["qualified_name"] for row in code_rows}
     hit_names = {row["name"] for row in code_rows}
     linked_facts = []
+    stale_linked = 0
+    resolutions = 0
+    MAX_RESOLUTIONS = 3  # cheap fast path — never let freshness checks dominate recall
     for fact in facts:
         meta = fact.get("metadata") or {}
         for link in meta.get("symbols", []) or []:
             qn = link.get("qualified_name") or ""
-            if (qn and qn in hit_qns) or link.get("symbol") in hit_names:
-                linked_facts.append({"id": fact.get("id"), "memory": fact.get("memory"), "via": link.get("symbol")})
+            symbol = link.get("symbol") or ""
+            matched = (qn and qn in hit_qns) or (symbol and symbol in hit_names)
+            stale = False
+            if matched and resolutions < MAX_RESOLUTIONS and symbol:
+                resolved = await _resolve_symbol(symbol, project)
+                resolutions += 1
+                stale = resolved is None  # symbol vanished from the graph since the fact was stored
+            if matched:
+                if stale:
+                    stale_linked += 1
+                linked_facts.append({"id": fact.get("id"), "memory": fact.get("memory"), "via": symbol, "stale_symbol": stale})
                 break
     payload = _dump(
         {
@@ -796,6 +815,7 @@ async def recall(
             ],
             "code": code_rows,
             "facts_linked_to_code": linked_facts,
+            "stale_linked_facts": stale_linked,
             "dropped_other_project": found.get("dropped_other_project", 0),
             "unscoped_kept": found.get("unscoped_kept", 0),
             "expired": found.get("expired", 0),
@@ -1051,15 +1071,18 @@ async def rest_health(request: Any) -> Any:
     from .graph import codebase_memory_exe
     from .store import backend, store_dir
 
-    return JSONResponse(
-        {
-            "status": "ok",
-            "service": "unified-memory-mcp",
-            "store_dir": str(store_dir()),
-            "backend": backend(),
-            "graph_binary": codebase_memory_exe(),
-        }
-    )
+    try:
+        return JSONResponse(
+            {
+                "status": "ok",
+                "service": "unified-memory-mcp",
+                "store_dir": str(store_dir()),
+                "backend": backend(),
+                "graph_binary": codebase_memory_exe(),
+            }
+        )
+    except Exception as exc:  # a dying health check is worse than a loud one
+        return JSONResponse({"status": "degraded", "error": repr(exc)[:300]}, status_code=500)
 
 
 @mcp.custom_route("/facts", methods=["POST"])
@@ -1091,9 +1114,13 @@ async def rest_add_fact(request: Any) -> Any:
     if payload.get("session"):
         metadata.setdefault("session", payload["session"])
     if payload.get("stale_after_days"):
+        try:
+            days = int(payload["stale_after_days"])
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "stale_after_days must be an integer"}, status_code=400)
         metadata.setdefault(
             "stale_after",
-            (datetime.now(timezone.utc) + timedelta(days=int(payload["stale_after_days"]))).isoformat(),
+            (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(),
         )
     if symbols and "symbols" not in metadata:
         metadata["symbols"] = symbols
@@ -1101,7 +1128,11 @@ async def rest_add_fact(request: Any) -> Any:
     if dedupe:
         from .vitals import find_near_duplicate
 
-        twin = find_near_duplicate(text, str(payload.get("user_id") or "amadeus"))
+        try:
+            twin = find_near_duplicate(text, str(payload.get("user_id") or "amadeus"))
+        except Exception as exc:
+            twin = None
+            print(f"[rest-add-fact] dedupe check failed (continuing undeduped): {exc}", file=sys.stderr, flush=True)
         if twin:
             # Idempotent write: satisfied, no new row, the caller gets the
             # existing fact's id instead of a fresh one.
@@ -1109,15 +1140,18 @@ async def rest_add_fact(request: Any) -> Any:
                 {"ok": True, "duplicate_of": twin, "id": twin["id"], "text": text[:200]},
                 status_code=200,
             )
-    raw = store_mod.call(
-        "add_memory",
-        {
-            "text": text,
-            "user_id": payload.get("user_id") or "amadeus",
-            "metadata": metadata or None,
-            "infer": False,
-        },
-    )
+    try:
+        raw = store_mod.call(
+            "add_memory",
+            {
+                "text": text,
+                "user_id": payload.get("user_id") or "amadeus",
+                "metadata": metadata or None,
+                "infer": False,
+            },
+        )
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": repr(exc)[:300]}, status_code=500)
     try:
         parsed = json.loads(raw)
     except Exception:
@@ -1132,8 +1166,18 @@ async def rest_list_facts(request: Any) -> Any:
     from starlette.responses import JSONResponse
 
     user_id = request.query_params.get("user_id", "amadeus")
-    limit = int(request.query_params.get("limit", "50"))
-    raw = store_mod.call("get_memories", {"user_id": user_id, "top_k": limit})
+    try:
+        limit = int(request.query_params.get("limit", "50"))
+    except ValueError:
+        from starlette.responses import JSONResponse
+
+        return JSONResponse({"ok": False, "error": "limit must be an integer"}, status_code=400)
+    try:
+        raw = store_mod.call("get_memories", {"user_id": user_id, "top_k": limit})
+    except Exception as exc:
+        from starlette.responses import JSONResponse
+
+        return JSONResponse({"ok": False, "error": repr(exc)[:300]}, status_code=500)
     try:
         parsed = json.loads(raw)
     except Exception:
