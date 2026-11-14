@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Objective stated in the README**: cut the tokens AI coding agents spend re-discovering a codebase (cold question vs warm question). If a future change doesn't serve that goal, it's scope creep.
+- **Savings meter** (`meter.py`, `memory_savings` tool): every graph-backed tool records response bytes and the naive-load baseline (bytes of the source files whose symbols the call returned). `memory_savings` reports per-tool counters with running totals and estimated tokens saved (~bytes/4). Counters persist across restarts in `$MEM0_DIR/memory_savings.json`. Fact fetches/writes count calls and bytes only.
+- **Coverage-aware recall** (`recall`): recall now returns a `coverage` block — the graph's own `index_status` note (capped) plus a conservative `refresh_may_help` boolean hint derived from it. No thresholds; agents see the health data and judge.
+- **Watchdog crash-loop breaker** (`watchdog.py`, `AMADEUS_WATCHDOG_CRASH_WINDOW` default 600 s, `AMADEUS_WATCHDOG_CRASH_LIMIT` default 5): every restart now logs the exit code of the last child, and supervision of a service that dies more than the limit inside the window stops loudly instead of thrashing forever — each restart costs 8–27 s of cold graph warm-up in practice. README documents the new env vars.
+- **Guard test** (`tests/test_objective.py`): monkeypatched graph + deterministic fixture facts assert recall returns bounded bytes, `coverage` propagates, and the savings ledger increments on recall.
+
+### Added
 - **Caller-aware default project** (portability): the MCP server's own CWD never changes, so the default project for graph/fact calls was frozen at boot and every other codebase needed an explicit `project=`. Now: `remember_fact` and `recall` read the caller's working directory from the MCP `_meta` (`ai.opencode/directory` best-effort) and match it against the indexed projects (exact root path first, then the `C-<path>` name suffix); an explicit `project=` argument still wins, and the env override still beats everything. `graph_projects` is a new discovery tool — lists every indexed project with its root path and names the deployment default, so working on any codebase is: list → pass `project=<name>`.
 - Also fixed a latent bug found while touching this path: `fact_freshness` and `fact_impact` called the async `_default_project()` without `await`, so with no explicit `project` and no fact scope the symbol resolution received a coroutine object instead of a project name.
 

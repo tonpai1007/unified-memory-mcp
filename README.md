@@ -107,7 +107,7 @@ Keep it alive (it is a shared service, so something should supervise it):
 python -m unified_memory.watchdog
 ```
 
-The watchdog probes the port every 45 s, restarts the server when it dies (with a grace period, so a booting server is not killed again), and can re-index the graph on a schedule:
+The watchdog probes the port every 45 s, restarts the server when it dies (with a grace period, so a booting server is not killed again), and can re-index the graph on a schedule. Each restart logs the exit code of the last child so a dying server stops being invisible; if the same service dies more than `AMADEUS_WATCHDOG_CRASH_LIMIT` times inside `AMADEUS_WATCHDOG_CRASH_WINDOW` seconds, supervision of that service stops loudly instead of thrashing forever (each restart costs 8–27 s of cold graph warm-up):
 
 ```bash
 export CODEBASE_MEMORY_REFRESH_MINUTES=30
@@ -153,6 +153,10 @@ Claude Desktop / Cursor / any stdio client:
 | `CODEBASE_MEMORY_EXE` | auto-detected | path to the codebase-memory binary |
 | `CODEBASE_MEMORY_PROJECT` | auto (CWD's project) | default project for graph queries |
 | `CODEBASE_MEMORY_REFRESH_MINUTES` | `0` (off) | scheduled graph refresh interval |
+| `AMADEUS_WATCHDOG_INTERVAL` | `45` | how often the watchdog probes the port |
+| `AMADEUS_WATCHDOG_GRACE_SECONDS` | `120` | grace period for a just-started service to bind |
+| `AMADEUS_WATCHDOG_CRASH_WINDOW` | `600` | crash-loop window in seconds |
+| `AMADEUS_WATCHDOG_CRASH_LIMIT` | `5` | restarts allowed per window before supervision stops |
 | `CODEBASE_MEMORY_REFRESH_TARGETS` | – | `name=/path` pairs to re-index |
 | `OPENAI_API_KEY` | ignored | deliberately unset: the store is 512-dim FastEmbed and must not flip to OpenAI embeddings |
 

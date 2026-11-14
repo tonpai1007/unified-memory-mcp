@@ -44,6 +44,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from . import graph as graph_mod
 from . import store as store_mod
+from .meter import get_meter
 
 INSTRUCTIONS = (
     "Unified memory surface: semantic facts (mem0) AND a code knowledge graph. "
@@ -152,6 +153,20 @@ def _dump(payload: Any) -> str:
         return json.dumps(payload, ensure_ascii=False, default=str)
     except Exception as exc:  # pragma: no cover
         return json.dumps({"error": f"serialize failed: {exc}"})
+
+
+def _size_bytes(path: str) -> int:
+    """Bytes on disk for a graph row's file path; 0 when unusable."""
+    try:
+        return os.path.getsize(path) if path and os.path.isfile(path) else 0
+    except OSError:
+        return 0
+
+
+def _baseline_from_rows(rows: list[dict[str, Any]]) -> int:
+    """Naive cost of the same answer: bytes of every source file the result touched."""
+    seen = {str(r.get("file", "")) for r in rows}
+    return sum(_size_bytes(f) for f in seen if f)
 
 
 def _cb_text(raw: str) -> str:
@@ -470,7 +485,7 @@ async def search_graph(
     exclude_entry_points: bool | None = None,
     include_connected: bool | None = None,
 ) -> str:
-    return await graph_mod.call(
+    payload = await graph_mod.call(
         "search_graph",
         {
             "name_pattern": name_pattern,
@@ -486,6 +501,9 @@ async def search_graph(
             "include_connected": include_connected,
         },
     )
+    rows = _parse_graph_rows(_cb_text(payload or ""))
+    get_meter().record("search_graph", len((payload or "").encode("utf-8")), _baseline_from_rows(rows))
+    return payload
 
 
 @mcp.tool(description="Trace callers/callees of a function in the code knowledge graph.")
@@ -514,7 +532,7 @@ async def get_code_snippet(
     project: str | None = None,
     include_neighbors: bool | None = None,
 ) -> str:
-    return await graph_mod.call(
+    payload = await graph_mod.call(
         "get_code_snippet",
         {
             "qualified_name": qualified_name,
@@ -522,6 +540,9 @@ async def get_code_snippet(
             "include_neighbors": include_neighbors,
         },
     )
+    # Baseline unknown without parsing the snippet payload; count calls + bytes only.
+    get_meter().record("get_code_snippet", len((payload or "").encode("utf-8")))
+    return payload
 
 
 @mcp.tool(description="Run a Cypher query against the code knowledge graph.")
@@ -672,6 +693,7 @@ async def remember_fact(
 
         twin = find_near_duplicate(text, user_id)
         if twin:
+            get_meter().record_dedup_hit()
             return _dump(
                 {
                     "stored": twin["id"],
@@ -697,7 +719,7 @@ async def remember_fact(
         {"text": text, "user_id": user_id, "agent_id": agent_id, "metadata": metadata, "infer": False},
     )
     rows = _mem0_rows(raw)
-    return _dump(
+    payload = _dump(
         {
             "stored": rows[0].get("id") if rows else None,
             "text": text[:400],
@@ -705,6 +727,24 @@ async def remember_fact(
             "project": project,
         }
     )
+    get_meter().record("remember_fact", len(payload.encode("utf-8")))
+    return payload
+
+
+async def _coverage_note(project: str) -> dict[str, Any]:
+    """Attach the graph's own health note so agents stop trusting a half-dead memory.
+
+    Returns the raw detail plus a conservative boolean hint only — no magic thresholds.
+    Unknown output shape => hint False and the raw text surfaced; agents decide.
+    """
+    try:
+        raw = await graph_mod.call("index_status", {"project": project})
+    except Exception as exc:
+        return {"note": None, "refresh_may_help": False, "error": repr(exc)[:200]}
+    text = _cb_text(raw) or ""
+    lowered = text.lower()
+    hint = any(token in lowered for token in ("stale", "skipped", "refresh", "partial", "never indexed", "not indexed", "missing"))
+    return {"note": text[:500], "refresh_may_help": bool(hint)}
 
 
 @mcp.tool(
@@ -726,6 +766,7 @@ async def recall(
     found = _search_facts(query, user_id, top_k, project)
     facts = found["results"]
     code_rows: list[dict[str, Any]] = []
+    coverage = await _coverage_note(project)
     if include_code:
         text = _cb_text(await graph_mod.call("search_graph", {"query": query, "project": project}))
         code_rows = _parse_graph_rows(text)
@@ -739,7 +780,7 @@ async def recall(
             if (qn and qn in hit_qns) or link.get("symbol") in hit_names:
                 linked_facts.append({"id": fact.get("id"), "memory": fact.get("memory"), "via": link.get("symbol")})
                 break
-    return _dump(
+    payload = _dump(
         {
             "query": query,
             "project": project,
@@ -758,8 +799,11 @@ async def recall(
             "dropped_other_project": found.get("dropped_other_project", 0),
             "unscoped_kept": found.get("unscoped_kept", 0),
             "expired": found.get("expired", 0),
+            "coverage": coverage,
         }
     )
+    get_meter().record("recall", len(payload.encode("utf-8")), _baseline_from_rows(code_rows))
+    return payload
 
 
 @mcp.tool(
@@ -1132,6 +1176,17 @@ def main() -> int:
     asyncio.run(graph_mod.prewarm())
     mcp.run(transport="streamable-http")
     return 0
+
+
+@mcp.tool(
+    description=(
+        "Savings ledger: calls, response bytes and estimated naive-load baseline per tool, "
+        "with running totals of tokens this server has saved you. Persists across restarts. "
+        "Graph-backed tools carry a file-bytes baseline; others count calls and bytes only."
+    )
+)
+async def memory_savings() -> str:
+    return _dump(get_meter().report())
 
 
 @mcp.tool(
