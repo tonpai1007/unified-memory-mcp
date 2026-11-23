@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-23
+
 ### Added
 - **Spaced graph refresh** (`watchdog.py`, `CODEBASE_MEMORY_REFRESH_SPACING_SECONDS` default 15 s): scheduled re-indexing now pauses between targets instead of rebuilding every repo back-to-back (~75 s of CPU in one burst across six projects). Set to `0` to restore the old behaviour. Documented in the README env table.
 - **Objective stated in the README**: cut the tokens AI coding agents spend re-discovering a codebase (cold question vs warm question). If a future change doesn't serve that goal, it's scope creep.
