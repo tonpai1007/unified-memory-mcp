@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Spaced graph refresh** (`watchdog.py`, `CODEBASE_MEMORY_REFRESH_SPACING_SECONDS` default 15 s): scheduled re-indexing now pauses between targets instead of rebuilding every repo back-to-back (~75 s of CPU in one burst across six projects). Set to `0` to restore the old behaviour. Documented in the README env table.
 - **Objective stated in the README**: cut the tokens AI coding agents spend re-discovering a codebase (cold question vs warm question). If a future change doesn't serve that goal, it's scope creep.
 - **Savings meter** (`meter.py`, `memory_savings` tool): every graph-backed tool records response bytes and the naive-load baseline (bytes of the source files whose symbols the call returned). `memory_savings` reports per-tool counters with running totals and estimated tokens saved (~bytes/4). Counters persist across restarts in `$MEM0_DIR/memory_savings.json`. Fact fetches/writes count calls and bytes only.
 - **Coverage-aware recall** (`recall`): recall now returns a `coverage` block — the graph's own `index_status` note (capped) plus a conservative `refresh_may_help` boolean hint derived from it. No thresholds; agents see the health data and judge.

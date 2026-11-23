@@ -158,6 +158,7 @@ Claude Desktop / Cursor / any stdio client:
 | `AMADEUS_WATCHDOG_CRASH_WINDOW` | `600` | crash-loop window in seconds |
 | `AMADEUS_WATCHDOG_CRASH_LIMIT` | `5` | restarts allowed per window before supervision stops |
 | `CODEBASE_MEMORY_REFRESH_TARGETS` | – | `name=/path` pairs to re-index |
+| `CODEBASE_MEMORY_REFRESH_SPACING_SECONDS` | `15` | pause between re-index targets (set `0` for back-to-back); spreads the CPU cost of refreshing several large repos |
 | `OPENAI_API_KEY` | ignored | deliberately unset: the store is 512-dim FastEmbed and must not flip to OpenAI embeddings |
 
 ## Design notes

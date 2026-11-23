@@ -34,6 +34,9 @@ START_GRACE_SECONDS = float(os.environ.get("AMADEUS_WATCHDOG_GRACE_SECONDS", "12
 REFRESH_MINUTES = float(os.environ.get("CODEBASE_MEMORY_REFRESH_MINUTES", "0"))
 REFRESH_TARGETS = os.environ.get("CODEBASE_MEMORY_REFRESH_TARGETS", "")
 REFRESH_MODE = os.environ.get("CODEBASE_MEMORY_REFRESH_MODE", "fast")
+# Re-indexing several large repos back-to-back costs ~75 s of CPU in one burst.
+# Spacing the targets keeps the graph fresh without the periodic CPU spike.
+REFRESH_SPACING_SECONDS = float(os.environ.get("CODEBASE_MEMORY_REFRESH_SPACING_SECONDS", "15"))
 # Optional extra services to supervise alongside the memory server, e.g. a
 # companion gateway on another port:
 #   EXTRA_SERVICES="Name|port|command|Name2|port2|command2"
@@ -179,10 +182,8 @@ async def _refresh_once() -> None:
     url = f"http://{HOST}:{PORT}/mcp"
     async with streamablehttp_client(url) as (read, write, _), ClientSession(read, write) as session:
         await session.initialize()
-        for raw_entry in REFRESH_TARGETS.split(","):
-            entry = raw_entry.strip()
-            if not entry:
-                continue
+        targets = [entry.strip() for entry in REFRESH_TARGETS.split(",") if entry.strip()]
+        for index, entry in enumerate(targets):
             name, _, repo_path = entry.partition("=")
             name = name.strip()
             repo_path = repo_path.strip()
@@ -195,6 +196,8 @@ async def _refresh_once() -> None:
                 log(f"watchdog: re-indexed {name} in {time.monotonic() - started:.0f}s")
             except Exception as exc:
                 log(f"watchdog: re-index of {name} failed: {exc!r}")
+            if index < len(targets) - 1 and REFRESH_SPACING_SECONDS > 0:
+                await asyncio.sleep(REFRESH_SPACING_SECONDS)
 
 
 def _refresh_loop() -> None:
