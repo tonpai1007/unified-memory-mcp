@@ -74,4 +74,12 @@ ignore = [
 # would push towards.
 "src/unified_memory/store.py" = ["PLR0911"]
 "src/unified_memory/vitals.py" = ["PLR0912"]
+# Meter recording is best-effort: a failed counter write must never break a tool.
+"src/unified_memory/meter.py" = ["S110"]
+# MCP tool bodies mirror the underlying API's shape and error paths explicitly.
+"src/unified_memory/server.py" = ["PLR0911", "PLR0912"]
+# The watchdog's lifecycle branches are explicit by design (grace, crash-loop, extras).
+"src/unified_memory/watchdog.py" = ["PLR0912"]
 "tests/smoke_test.py" = ["PLR0912"]
+# pytest's objective guard is written as plain asserts with a bounded-byte budget.
+"tests/test_objective.py" = ["S101", "PLR2004"]
