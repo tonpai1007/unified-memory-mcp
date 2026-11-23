@@ -65,10 +65,10 @@ Facts can also be **scoped to a project** (`project` on write and read) so a fin
 pip install unified-memory-mcp
 ```
 
-Straight from the tagged GitHub release (no PyPI account needed):
+Or pin to a tagged source release (no PyPI account needed):
 
 ```bash
-pip install "unified-memory-mcp @ git+https://github.com/tonpai1007/unified-memory-mcp@v0.1.0"
+pip install "unified-memory-mcp @ git+https://github.com/tonpai1007/unified-memory-mcp@v0.1.1"
 ```
 
 The fact store works standalone (the package builds the same store with
