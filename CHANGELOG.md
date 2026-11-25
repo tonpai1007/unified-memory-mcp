@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-25
+
+### Added
+- **Savings meter now reports real savings** (`meter.py`, `_baseline_from_rows`): graph rows carry project-relative paths, so the naive baseline is now resolved against the indexed project roots. `memory_savings` reports actual `saved_bytes`/`saved_tokens_est` instead of zero.
+- **`source` provenance on writes** (`remember_fact`, `add_memory`): optional `source` argument stored in fact metadata, closing the "without provenance" finding from `memory_audit`.
+- **MCP prompts**: `explore_codebase`, `recall_context`, `audit_memory` exposed as slash-command entry points for clients that support MCP prompts.
+
 ## [0.1.1] - 2026-11-23
 
 ### Added
