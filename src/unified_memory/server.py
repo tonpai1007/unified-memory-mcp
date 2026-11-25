@@ -163,10 +163,26 @@ def _size_bytes(path: str) -> int:
         return 0
 
 
-def _baseline_from_rows(rows: list[dict[str, Any]]) -> int:
-    """Naive cost of the same answer: bytes of every source file the result touched."""
+def _baseline_from_rows(rows: list[dict[str, Any]], roots: list[str] | None = None) -> int:
+    """Naive cost of the same answer: bytes of every source file the result touched.
+
+    Graph rows carry project-relative paths (``mcp/amadeus_server.py``), so they
+    only resolve once joined to the indexed project's root. Without that, the
+    savings meter reported 0 forever even though symbols were returned.
+    """
     seen = {str(r.get("file", "")) for r in rows}
-    return sum(_size_bytes(f) for f in seen if f)
+    total = 0
+    for f in seen:
+        if not f:
+            continue
+        size = _size_bytes(f)
+        if size == 0 and roots:
+            for root in roots:
+                size = _size_bytes(os.path.join(root, f))
+                if size:
+                    break
+        total += size
+    return total
 
 
 def _cb_text(raw: str) -> str:
@@ -376,8 +392,11 @@ async def add_memory(
     stale_after: str | None = None,
     infer: bool = False,
     dedupe: bool = True,
+    source: str | None = None,
 ) -> str:
     meta = dict(metadata or {})
+    if source and not meta.get("source"):
+        meta["source"] = source
     session_id = _session_id_from(ctx)
     if session_id and not meta.get("session"):
         meta["session"] = session_id
@@ -502,7 +521,8 @@ async def search_graph(
         },
     )
     rows = _parse_graph_rows(_cb_text(payload or ""))
-    get_meter().record("search_graph", len((payload or "").encode("utf-8")), _baseline_from_rows(rows))
+    roots = [p.get("root_path") for p in await _indexed_projects() if p.get("root_path")]
+    get_meter().record("search_graph", len((payload or "").encode("utf-8")), _baseline_from_rows(rows, roots))
     return payload
 
 
@@ -689,6 +709,7 @@ async def remember_fact(
     stale_after_days: int | None = None,
     stale_after: str | None = None,
     dedupe: bool = True,
+    source: str | None = None,
 ) -> str:
     project = project or await _default_project(_cwd_hint_from(ctx))
     links: list[dict[str, Any]] = []
@@ -712,6 +733,8 @@ async def remember_fact(
                 }
             )
     metadata: dict[str, Any] = {"project": project}
+    if source:
+        metadata["source"] = source
     if links:
         metadata["symbols"] = links
     resolved_session = session_id or _session_id_from(ctx)
@@ -822,7 +845,8 @@ async def recall(
             "coverage": coverage,
         }
     )
-    get_meter().record("recall", len(payload.encode("utf-8")), _baseline_from_rows(code_rows))
+    _roots = [p.get("root_path") for p in await _indexed_projects() if p.get("root_path")]
+    get_meter().record("recall", len(payload.encode("utf-8")), _baseline_from_rows(code_rows, _roots))
     return payload
 
 
@@ -1307,6 +1331,55 @@ async def memory_purge_expired(user_id: str = "amadeus", dry_run: bool = True, l
     from .vitals import purge_expired as _purge
 
     return _dump(_purge(user_id=user_id, dry_run=dry_run, limit=limit))
+
+
+# ── MCP prompts (slash-command entry points for clients that support them) ──
+
+
+@mcp.prompt(description="Explore a codebase from the knowledge graph before reading files.")
+def explore_codebase(project: str | None = None, question: str = "") -> str:
+    """Walk the graph first, then read only what the graph points at."""
+    proj = project or "the default project"
+    q = question or "(the user's question)"
+    return (
+        f"Explore {proj} to answer: {q}.\n"
+        "1. Call search_graph (and trace_path when a specific symbol is named) to find the relevant "
+        "symbols and their files. Never grep or read whole directories first.\n"
+        "2. Fetch source with get_code_snippet for the symbols the graph returned.\n"
+        "3. Only if the graph is insufficient, read individual files — never directories.\n"
+        "4. After answering, call remember_fact with the finding, linked to the symbols it describes "
+        "(symbols=[...]), scoped to the project, so the next session starts warm.\n"
+        "5. Report coverage/index_status if the graph looks stale."
+    )
+
+
+@mcp.prompt(description="Recall what we already know about a topic, with the code it touches.")
+def recall_context(query: str, project: str | None = None) -> str:
+    """One fused facts + code answer instead of re-discovering."""
+    proj = project or "the default project"
+    return (
+        f"Answer from memory first: {query}\n"
+        f"1. Call recall(query=..., project={proj!r}) — it returns facts AND the code symbols they "
+        "describe in one call. Prefer this over search_memories or search_graph alone.\n"
+        "2. If recall is empty or stale, fall back to search_graph / get_code_snippet, then "
+        "remember_fact the result so nobody pays for it twice.\n"
+        "3. Cite the fact ids and qualified names you used."
+    )
+
+
+@mcp.prompt(description="Audit the fact store for a project (dry run) and suggest hygiene actions.")
+def audit_memory(project: str | None = None) -> str:
+    """Read-only hygiene report; never mutates without confirmation."""
+    proj = project or "the default project (unscoped facts)"
+    return (
+        f"Audit memory for {proj}:\n"
+        "1. Run memory_audit (dry run) and report unscoped facts, expired facts, facts without "
+        "provenance/symbol links, and near-duplicate pairs.\n"
+        "2. Run memory_dedupe(dry_run=true) and memory_purge_expired(dry_run=true) to preview "
+        "what would be removed; only apply with the user's explicit confirmation.\n"
+        "3. Suggest scoping unscoped facts with memory_scope_facts(dry_run=true).\n"
+        "4. Summarise findings and propose the next cleanup step; do not mutate without asking."
+    )
 
 
 if __name__ == "__main__":
