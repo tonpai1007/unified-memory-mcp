@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unified-memory-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "One MCP server for semantic fact memory (mem0) and a code knowledge graph (codebase-memory), with cross-linked recall."
 readme = "README.md"
 requires-python = ">=3.10"
